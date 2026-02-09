@@ -7,7 +7,9 @@ import os
 from linkup import LinkupClient
 from dotenv import load_dotenv
 
-load_dotenv("config/.env")
+# Use absolute path so it works regardless of cwd
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+load_dotenv(os.path.join(_project_root, 'config', '.env'))
 
 
 class LinkupWrapper:
@@ -41,7 +43,7 @@ class LinkupWrapper:
                 for i, result in enumerate(results.results[:max_results]):
                     # Extract data from LinkupSearchTextResult or similar objects
                     source_item = {
-                        "title": getattr(result, "title", ""),
+                        "title": getattr(result, "name", "") or getattr(result, "title", ""),
                         "url": getattr(result, "url", ""),
                         "snippet": getattr(
                             result, "snippet", getattr(result, "content", "")
@@ -81,11 +83,11 @@ class LinkupWrapper:
 if __name__ == "__main__":
     linkup = LinkupWrapper()
     if linkup.test_connection():
-        print("✅ Linkup API connection successful!")
+        print("Linkup API connection successful!")
         # Test search
         results = linkup.search("Anthropic AI company", max_results=3)
         print(f"Found {results['total_found']} results")
         for source in results["sources"]:
             print(f"- {source['title']}")
     else:
-        print("❌ Linkup API connection failed")
+        print("Linkup API connection failed")

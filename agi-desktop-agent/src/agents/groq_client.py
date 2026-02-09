@@ -8,8 +8,9 @@ from groq import Groq
 from dotenv import load_dotenv
 import openai
 
-load_dotenv("config/.env")
-
+# Use absolute path so it works regardless of cwd
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+load_dotenv(os.path.join(_project_root, 'config', '.env'))
 
 class GroqClient:
     def __init__(self):
