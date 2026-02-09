@@ -233,6 +233,44 @@ def main():
             efficiency = stats.get("efficiency_pct", 0)
             st.metric("Efficiency", f"{efficiency:.1f}%")
 
+        # Content source breakdown row
+        st.markdown("---")
+        st.markdown("### 📊 Content Source Analysis")
+
+        source_col1, source_col2, source_col3, source_col4 = st.columns(4)
+
+        total_entities = stats.get("total_entities", 1)
+        linkup_entities = stats.get("entities_searched", 0)
+        known_entities = stats.get("entities_known", 0)
+        linkup_sources = stats.get("linkup_sources", 0)
+
+        linkup_pct = (
+            (linkup_entities / total_entities * 100) if total_entities > 0 else 0
+        )
+        known_pct = (known_entities / total_entities * 100) if total_entities > 0 else 0
+        email_pct = 100 - linkup_pct  # Email context is inverse of web search
+
+        with source_col1:
+            st.metric(
+                "🌐 From Linkup/Web",
+                f"{linkup_pct:.0f}%",
+                delta=f"{linkup_entities} entities",
+            )
+        with source_col2:
+            st.metric(
+                "🧠 From LLM Knowledge",
+                f"{known_pct:.0f}%",
+                delta=f"{known_entities} entities",
+            )
+        with source_col3:
+            st.metric("📧 Email Context", f"{email_pct:.0f}%", delta="Sender/content")
+        with source_col4:
+            st.metric(
+                "💡 Data Quality",
+                f"{min(100, (linkup_sources/10)*100):.0f}%",
+                delta=f"{linkup_sources} sources",
+            )
+
         # Tabs for different sections
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             ["🔍 Entities", "📚 Research", "✍️ Reply", "🧠 Reasoning", "📈 Stats"]
@@ -342,42 +380,169 @@ def main():
 
         # Tab 5: Stats
         with tab5:
-            st.subheader("📊 Detailed Statistics")
+            st.subheader("📊 Detailed Statistics & Content Source Analysis")
 
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([2, 1])
 
             with col1:
-                st.markdown("### Processing Metrics")
-                st.write(
-                    f"**Execution Time:** {result.get('execution_time', 'N/A'):.2f}s"
-                )
-                st.write(f"**Total Sources:** {len(result.get('sources', []))}")
-                st.write(f"**Timestamp:** {result.get('timestamp', 'N/A')}")
+                # Processing Metrics Section
+                st.markdown("### 📈 Processing Metrics")
+                metric_col1, metric_col2, metric_col3 = st.columns(3)
+                with metric_col1:
+                    st.metric(
+                        "Execution Time", f"{result.get('execution_time', 'N/A'):.2f}s"
+                    )
+                with metric_col2:
+                    st.metric("Total Sources", len(result.get("sources", [])))
+                with metric_col3:
+                    st.metric("Entities Analyzed", stats.get("total_entities", 0))
 
-            with col2:
-                st.markdown("### Smart Linkup Impact")
+                st.markdown("---")
+
+                # Smart Linkup Impact Section
+                st.markdown("### 🔗 Smart Linkup Impact")
                 if stats:
-                    col1_inner, col2_inner = st.columns(2)
-                    with col1_inner:
-                        st.markdown(
+                    impact_col1, impact_col2 = st.columns(2)
+                    with impact_col1:
+                        st.write(
                             f"**Total Entities:** {stats.get('total_entities', 0)}"
                         )
-                        st.markdown(
-                            f"**Searched:** {stats.get('entities_searched', 0)}"
+                        st.write(
+                            f"**Web Searched (Linkup):** {stats.get('entities_searched', 0)}"
                         )
-                    with col2_inner:
-                        st.markdown(f"**Known:** {stats.get('entities_known', 0)}")
-                        st.markdown(f"**Sources:** {stats.get('linkup_sources', 0)}")
+                    with impact_col2:
+                        st.write(
+                            f"**Used Existing Knowledge:** {stats.get('entities_known', 0)}"
+                        )
+                        st.write(
+                            f"**Sources Retrieved:** {stats.get('linkup_sources', 0)}"
+                        )
 
                     efficiency = stats.get("efficiency_pct", 0)
-                    st.markdown(f"### Efficiency")
-
-                    # Progress bar
+                    st.markdown(f"### ⚡ Efficiency Metric")
                     st.progress(efficiency / 100)
-
                     st.markdown(
-                        f"**{efficiency:.1f}%** of entities used existing knowledge"
+                        f"**{efficiency:.1f}%** of entities used existing knowledge • "
+                        f"**Cost Reduction:** {efficiency:.0f}% fewer API calls"
                     )
+
+            with col2:
+                # Content Source Analytics Panel
+                st.markdown("### 📊 Content Breakdown")
+
+                # Calculate content percentages
+                total_entities = stats.get("total_entities", 1)
+                linkup_entities = stats.get("entities_searched", 0)
+                known_entities = stats.get("entities_known", 0)
+
+                linkup_pct = (
+                    (linkup_entities / total_entities * 100)
+                    if total_entities > 0
+                    else 0
+                )
+                known_pct = (
+                    (known_entities / total_entities * 100) if total_entities > 0 else 0
+                )
+
+                # Source breakdown visualization
+                st.markdown("**Content Sources:**")
+
+                col_source1, col_source2 = st.columns(2)
+                with col_source1:
+                    st.markdown(f"🌐 **Linkup/Web**")
+                    st.markdown(
+                        f"<div style='font-size:24px; font-weight:bold; color:#2196F3'>{linkup_pct:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"{linkup_entities}/{total_entities} entities")
+
+                with col_source2:
+                    st.markdown(f"🧠 **LLM Knowledge**")
+                    st.markdown(
+                        f"<div style='font-size:24px; font-weight:bold; color:#4CAF50'>{known_pct:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"{known_entities}/{total_entities} entities")
+
+                st.markdown("---")
+                st.markdown("**Content Quality:**")
+
+                # Data quality metrics
+                has_sources = len(result.get("sources", [])) > 0
+                has_email_context = len(email_content) > 100
+
+                quality_score = 0
+                if linkup_entities > 0:
+                    quality_score += 25
+                if known_entities > 0:
+                    quality_score += 25
+                if has_sources:
+                    quality_score += 25
+                if has_email_context:
+                    quality_score += 25
+
+                st.progress(quality_score / 100)
+                st.caption(f"Data Quality: {quality_score}/100")
+
+                st.markdown("---")
+                st.markdown("**Trust Indicators:**")
+
+                # Trust indicators
+                trust_items = []
+                if known_pct >= 50:
+                    trust_items.append("✅ High knowledge base coverage")
+                if linkup_pct > 0:
+                    trust_items.append("✅ Fresh web data included")
+                if len(result.get("sources", [])) >= 3:
+                    trust_items.append("✅ Multiple sources verified")
+                if efficiency >= 70:
+                    trust_items.append("✅ Cost-optimized analysis")
+
+                for item in trust_items:
+                    st.caption(item)
+
+            st.markdown("---")
+            st.markdown("### 🧠 Knowledge Source Attribution")
+
+            # Attribution breakdown
+            research_data = result.get("research", {})
+
+            if research_data:
+                attribution_col1, attribution_col2 = st.columns(2)
+
+                with attribution_col1:
+                    st.markdown("**From Existing Knowledge:**")
+                    knowledge_sources = []
+                    for entity, data in research_data.items():
+                        if data.get("used_existing_knowledge"):
+                            reasoning = data.get("reasoning", "General knowledge")
+                            knowledge_sources.append(
+                                f"• **{entity}**: {reasoning[:60]}..."
+                            )
+
+                    if knowledge_sources:
+                        for source in knowledge_sources:
+                            st.caption(source)
+                    else:
+                        st.caption("No existing knowledge used")
+
+                with attribution_col2:
+                    st.markdown("**From Web Research (Linkup):**")
+                    linkup_sources = []
+                    for entity, data in research_data.items():
+                        if data.get("sources") and not data.get(
+                            "used_existing_knowledge"
+                        ):
+                            source_count = len(data.get("sources", []))
+                            linkup_sources.append(
+                                f"• **{entity}**: {source_count} sources found"
+                            )
+
+                    if linkup_sources:
+                        for source in linkup_sources:
+                            st.caption(source)
+                    else:
+                        st.caption("No web research performed")
 
                     # Cost estimation
                     searches_avoided = stats.get("entities_known", 0)
