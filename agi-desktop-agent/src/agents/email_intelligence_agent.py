@@ -7,6 +7,7 @@ This agent analyzes emails, researches entities using Linkup, and drafts informe
 
 import json
 import time
+import re
 from typing import List, Dict, Any
 from .groq_client import GroqClient
 from .linkup_wrapper import LinkupWrapper
@@ -64,43 +65,45 @@ class EmailIntelligenceAgent:
         """
         entity_name = entity.get("name", "")
         entity_type = entity.get("type", "unknown")
+        current_date = time.strftime("%Y-%m-%d")
 
-        prompt = f"""You are an AI assistant that assesses whether external research is needed for an entity.
+        prompt = f"""Decide if you need current web information about: {entity_name}
 
-ENTITY TO ASSESS:
-Name: {entity_name}
-Type: {entity_type}
-Context: {entity.get('context', 'No additional context')}
+Context: {entity.get('context', 'No context')}
+Date: {current_date}
 
-EMAIL CONTEXT:
-{email_context[:500]}  # First 500 chars of email
+BE STRICT. Only search if you MUST have recent 2024-2025 info.
 
-ASSESSMENT CRITERIA:
+DO NOT SEARCH for:
+❌ Generic concepts: "AI", "machine learning", "cloud computing", "real-time processing"
+❌ Well-known public companies: Google, Microsoft, Apple, Amazon, OpenAI, Anthropic
+❌ Information that's unlikely to change (historical facts, famous people)
+❌ Generic terms like "data analytics" or "neural networks"
 
-Search Linkup when:
-✅ Unknown company/organization (you've never heard of it)
-✅ Need recent/current information (2024-2025 specific)
-✅ Need specific details not in your training data
-✅ Unfamiliar startup/emerging company
+DO SEARCH for:
+✅ Unknown startups or companies (less than 10K Google results)
+✅ Specific people if their recent role/achievements matter
+✅ Recent funding rounds, acquisitions, partnerships (2024+)
+✅ New products or service changes
+✅ Companies you're less than 80% confident about
 
-DON'T Search when:
-❌ Well-known entity with stable information (Google, Microsoft, Apple, Amazon)
-❌ Historical/biographical info you already know
-❌ Generic terms or concepts (cloud computing, AI)
-❌ Information unlikely to have changed recently
+Quick checks FIRST:
+1. Do you know this well-known company? → Don't search
+2. Is this a generic concept? → Don't search
+3. Is this a startup/unknown entity AND relevant to response? → Search
 
-Respond with ONLY this JSON (no markdown, no explanation):
+Respond ONLY with JSON:
 {{
   "needs_search": true/false,
-  "reasoning": "Brief explanation of decision",
+  "reasoning": "one sentence",
   "confidence": 0.0-1.0,
-  "known_info": "What you already know about this entity (if any)",
-  "search_query": "Suggested search query if needs_search=true"
+  "known_info": "what you know",
+  "search_query": "exact search string" or null
 }}"""
 
         try:
             response = self.groq.chat(
-                messages=[{"role": "user", "content": prompt}], temperature=0.3
+                messages=[{"role": "user", "content": prompt}], temperature=0.6
             )
 
             if response.get("error"):
@@ -159,27 +162,29 @@ Respond with ONLY this JSON (no markdown, no explanation):
         """
         self.add_reasoning("Step 1: Analyzing email for unknown entities...")
 
-        prompt = f"""You are an AI assistant that extracts entities from emails that would benefit from research.
+        prompt = f"""Extract entities worth researching from this email.
 
-Analyze this email and extract:
-1. Company names (especially sender's company or mentioned companies)
-2. People names (if they're notable or their background is relevant)
-3. Products or services mentioned
+BE STRICT - Only include:
+✅ Unknown companies or startups (worth searching)
+✅ Specific people (investors, founders, important contacts)
+✅ Specific products that are unclear
 
-Focus on entities that would help craft an informed response.
+DO NOT include:
+❌ Well-known companies (Google, Microsoft, Apple, Amazon, OpenAI, Meta, etc.)
+❌ Generic terms ("AI", "cloud computing", "real-time data processing", "machine learning")
+❌ Broad concepts
+❌ The receiver's own company
 
-Email content:
+Email:
 {email_content}
 
-Return ONLY a JSON array (no markdown, no explanation):
+Return ONLY JSON array (no markdown):
 [
-  {{"type": "company", "name": "Acme Ventures", "context": "sender's VC firm, mentioned Series A"}},
-  {{"type": "company", "name": "DataFlow AI", "context": "portfolio company mentioned"}},
-  ...
+  {{"type": "company", "name": "Acme Ventures", "context": "VC firm from sender"}},
+  {{"type": "person", "name": "Alex Chen", "context": "founder/investor"}}
 ]
 
-If no entities need research, return: []
-"""
+If nothing qualifies, return: []"""
 
         try:
             response = self.groq.chat(
@@ -338,6 +343,67 @@ If no entities need research, return: []
 
         return research_results
 
+    def _improve_draft(self, draft: str) -> str:
+        """
+        Post-process drafted reply to improve quality
+        Removes clichés and shortens if too long
+        """
+        # List of clichés to remove
+        cliches = [
+            "I hope this email finds you well",
+            "hope this message finds you well",
+            "testament to our",
+            "testament to the",
+            "drive innovation",
+            "drive growth",
+            "looking forward to connecting",
+            "looking forward to hearing from you",
+            "in closing",
+            "in summary",
+            "best regards",
+            "warm regards",
+            "kind regards",
+            "please don't hesitate",
+            "at your earliest convenience",
+            "synergies",
+            "strategic partnership",
+            "win-win",
+        ]
+
+        improved = draft
+        for cliche in cliches:
+            # Case-insensitive replacement
+            import re
+
+            pattern = re.compile(re.escape(cliche), re.IGNORECASE)
+            improved = pattern.sub("", improved)
+
+        # Clean up extra spaces
+        improved = re.sub(r"\s+", " ", improved).strip()
+
+        # Check word count
+        word_count = len(improved.split())
+        if word_count > 200:
+            # Try to shorten by asking LLM
+            self.add_reasoning(
+                f"⚠️ Draft is {word_count} words (max 150), attempting to shorten...",
+                "warning",
+            )
+
+            shorten_prompt = f"""Make this email reply shorter (exactly 100-150 words) while keeping the key points:
+
+{improved}
+
+Shortened version (100-150 words only):"""
+
+            response = self.groq.chat(
+                messages=[{"role": "user", "content": shorten_prompt}], temperature=0.5
+            )
+            if not response.get("error"):
+                improved = response.get("content", improved)
+
+        return improved.strip()
+
     def draft_reply(self, email_content: str, research_data: Dict[str, Any]) -> str:
         """
         Draft an informed reply using research findings or existing knowledge
@@ -379,22 +445,37 @@ If no entities need research, return: []
                     elif data.get("error"):
                         research_context += f"[Search Error] {data.get('error')}\n"
 
-        prompt = f"""You are drafting a professional, warm email reply. Use the research findings and knowledge to make your response informed and contextually aware.
+        prompt = f"""Draft a CONCISE, WARM email reply (100-150 words MAXIMUM).
 
 ORIGINAL EMAIL:
 {email_content}
 
 {research_context}
 
-INSTRUCTIONS:
-1. Write a professional, friendly reply
-2. Reference specific research findings or knowledge naturally (e.g., "I saw your recent investment in..." or "Congratulations on...")
-3. Show you've done your homework without being excessive
-4. Keep it 3-4 short paragraphs
-5. End with a clear call-to-action
-6. Match the tone of the original email
+TONE RULES:
+- Conversational and warm (use contractions: I'm, we're, you're)
+- Short sentences and short paragraphs
+- NO corporate jargon or clichés (avoid: "I hope this finds you well", "testament to", "drive innovation", "looking forward to")
+- Sound human, not like AI wrote it
 
-Draft the reply (no subject line needed):
+STRUCTURE:
+1. Brief thanks (1-2 sentences)
+2. Show you know them (1 sentence with specific research)
+3. Express interest + next step (1-2 sentences)
+
+EXAMPLE:
+Hi Alex,
+
+Thanks for reaching out! I'm familiar with Acme Ventures' focus on frontier tech—your portfolio of Quantum Labs and CloudScale is impressive.
+
+We'd definitely be interested in exploring a partnership. Our recent Q4 growth aligns well with your investment thesis.
+
+How about Tuesday or Wednesday for a quick call?
+
+Best,
+Alex
+
+Now draft the reply (MAXIMUM 150 words):
 """
 
         try:
@@ -409,9 +490,16 @@ Draft the reply (no subject line needed):
                 return "Error: Could not generate reply"
 
             draft = response.get("content", "")
-            self.add_reasoning("✓ Draft reply completed", "success")
 
-            return draft
+            # Post-process to improve quality
+            improved_draft = self._improve_draft(draft)
+
+            word_count = len(improved_draft.split())
+            self.add_reasoning(
+                f"✓ Draft reply completed ({word_count} words)", "success"
+            )
+
+            return improved_draft
 
         except Exception as e:
             self.add_reasoning(f"❌ Drafting error: {str(e)}", "error")

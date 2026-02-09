@@ -69,10 +69,35 @@ streamlit run app.py
   - 📚 Research: Findings (shows if from search or existing knowledge)
   - ✍️ Reply: AI-generated response
   - 🧠 Reasoning: Decision-making steps
-  - 📈 Stats: Efficiency metrics
+  - 📈 Stats: Efficiency metrics + **advanced content analytics**
+- **Advanced Analytics Dashboard** (NEW!)
+  - 📊 Content source breakdown (% from Linkup/Web, LLM Knowledge, Email Context)
+  - 💡 Data quality scores (0-100)
+  - ✅ Trust indicators (freshness, coverage, verification)
+  - 🧠 Knowledge source attribution (exactly where content came from)
+  - 💰 Real-time cost savings display
 - **Export**: Download results as JSON or text
 
 See [UI_GUIDE.md](UI_GUIDE.md) for detailed usage instructions.
+
+## 📊 Analytics & Content Source Tracking (NEW!)
+
+The enhanced UI now provides **comprehensive analytics** showing exactly where your email reply content comes from:
+
+### What's Tracked
+- **Content Source Breakdown**: % from Linkup/Web searches vs LLM knowledge vs Email context
+- **Quality Metrics**: Data completeness score (0-100)
+- **Trust Indicators**: Automatic badges showing reliability signals
+- **Source Attribution**: Exactly which entities used knowledge vs which required web search
+- **Cost Savings**: Real-time calculation of API costs avoided
+
+### Key Metrics
+1. **Content Sources Row** - Quick percentages of where content comes from
+2. **Stats Tab - Right Panel** - Visual breakdown with progress bars
+3. **Knowledge Source Attribution** - Detailed breakdown by entity
+4. **Trust Indicators** - Quality assurance badges
+
+For complete analytics guide with examples, see [ANALYTICS_GUIDE.md](ANALYTICS_GUIDE.md).
 
 ## ✨ Key Features
 
