@@ -91,7 +91,11 @@ class DocumentAgent:
         # Step 1: Extract text from PDF(s)
         text = ""
         extraction_logs = []
-        file_paths = file_path_or_paths if isinstance(file_path_or_paths, list) else [file_path_or_paths]
+        # Only allow single PDF for now
+        if isinstance(file_path_or_paths, list):
+            file_paths = [file_path_or_paths[0]] if file_path_or_paths else []
+        else:
+            file_paths = [file_path_or_paths]
         for idx, file_path in enumerate(file_paths):
             if not file_path:
                 continue
@@ -104,7 +108,7 @@ class DocumentAgent:
                         extraction_logs.append(f"[DEBUG] PDF {idx+1} page {page_num+1}: {page_text[:100]}...")
                         text += page_text
                 if text.strip():
-                    reasoning_steps.append(f"Extracted text from PDF {idx+1}.")
+                    reasoning_steps.append(f"Extracted text from PDF {idx+1} (all pages).")
                     extraction_logs.append(f"[INFO] Successfully extracted text from PDF {idx+1}.")
                 else:
                     raise ValueError("No text extracted with PyPDF2.")
@@ -123,7 +127,7 @@ class DocumentAgent:
                         ocr_text += page_ocr + "\n"
                     if ocr_text.strip():
                         text += ocr_text
-                        reasoning_steps.append(f"Extracted text from PDF {idx+1} using OCR.")
+                        reasoning_steps.append(f"Extracted text from PDF {idx+1} using OCR (all pages).")
                         extraction_logs.append(f"[INFO] Successfully extracted text from PDF {idx+1} using OCR.")
                     else:
                         raise ValueError("No text extracted with OCR.")
@@ -135,6 +139,22 @@ class DocumentAgent:
                         "result": "Error during PDF extraction (PyPDF2 and OCR failed).",
                         "extraction_logs": extraction_logs
                     }
+
+        # If text is too long, chunk and summarize before sending to LLM
+        MAX_CHUNK_SIZE = 8000  # chars, safe for LLM
+        if len(text) > MAX_CHUNK_SIZE:
+            extraction_logs.append(f"[INFO] PDF text is too long ({len(text)} chars), chunking and summarizing...")
+            chunks = [text[i:i+MAX_CHUNK_SIZE] for i in range(0, len(text), MAX_CHUNK_SIZE)]
+            chunk_summaries = []
+            for i, chunk in enumerate(chunks):
+                extraction_logs.append(f"[INFO] Summarizing chunk {i+1}/{len(chunks)}...")
+                chunk_prompt = (
+                    f"Summarize the following document chunk in detail, including all key points, definitions, and formulas.\n\nChunk:\n{chunk}\n\nReturn a detailed summary."
+                )
+                summary = self.groq_client.ask(chunk_prompt)
+                chunk_summaries.append(summary)
+            text = "\n".join(chunk_summaries)
+            extraction_logs.append(f"[INFO] Combined {len(chunks)} chunk summaries for final context.")
 
         # Step 2: Use LLM to identify the most relevant passage/section
         # Step 2: Summarize PDF data for context using LLM
