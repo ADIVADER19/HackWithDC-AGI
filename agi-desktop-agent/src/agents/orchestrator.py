@@ -7,6 +7,7 @@ import time
 from .groq_client import GroqClient
 from .linkup_wrapper import LinkupWrapper
 from .email_agent import SmartEmailAgent
+from .document_agent import DocumentAgent
 
 
 class AgentOrchestrator:
@@ -14,6 +15,7 @@ class AgentOrchestrator:
         self.groq = GroqClient()
         self.linkup = LinkupWrapper()
         self.email_agent = SmartEmailAgent()
+        self.document_agent = DocumentAgent(self.groq, self.linkup)
 
     def process(self, scenario: str, input_data: dict) -> dict:
         """
@@ -76,24 +78,16 @@ class AgentOrchestrator:
 
     def _process_document(self, input_data: dict) -> dict:
         """
-        Process document scenario (stub - not yet implemented).
+        Process document scenario using DocumentAgent.
 
         Expected input_data: {
             'file_path': '/path/to/document.pdf',
             'question': 'Are payment terms standard?'
         }
         """
-        return {
-            'reasoning_steps': [
-                "Extracting text from PDF...",
-                "Identifying payment terms...",
-                "Searching industry standards via Linkup...",
-                "Comparing and analyzing..."
-            ],
-            'linkup_sources': [],
-            'result': "Document analysis agent not yet implemented. Coming soon!",
-            'confidence': 0.0
-        }
+        file_path = input_data.get('file_path', '')
+        question = input_data.get('question', '')
+        return self.document_agent.process(file_path, question)
 
     def _process_meeting(self, input_data: dict) -> dict:
         """

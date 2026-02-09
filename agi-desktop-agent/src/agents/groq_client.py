@@ -6,6 +6,7 @@ Developer 1: Backend Agents
 import os
 from groq import Groq
 from dotenv import load_dotenv
+import openai
 
 load_dotenv("config/.env")
 
@@ -56,18 +57,23 @@ class GroqClient:
             print(f"Groq API Error: {e}")
             return {"content": None, "error": str(e)}
 
+    def ask(self, prompt):
+        """Simple prompt-response method used by DocumentAgent."""
+        client = openai.OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.groq.com/openai/v1"
+        )
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=int(os.getenv('MAX_TOKENS', 4096)),
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+
     def test_connection(self):
         """Test if Groq API is working"""
         test_response = self.chat(
             [{"role": "user", "content": "Hello, respond with 'OK'"}]
         )
         return "OK" in (test_response.get("content") or "")
-
-
-# Quick test
-if __name__ == "__main__":
-    client = GroqClient()
-    if client.test_connection():
-        print("✅ Groq API connection successful!")
-    else:
-        print("❌ Groq API connection failed")
