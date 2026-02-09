@@ -1,0 +1,14 @@
+# Core Dependencies
+streamlit==1.31.0
+groq==0.4.2
+linkup-sdk==0.10.0
+
+# Document Processing
+pypdf2==3.0.1
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Optional but recommended
+streamlit-option-menu==0.3.12
