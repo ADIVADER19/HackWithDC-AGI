@@ -724,12 +724,16 @@ NOW WRITE YOUR RESPONSE (100-150 words):
             # Post-process to improve quality
             improved_draft = self._improve_draft(draft)
 
-            word_count = len(improved_draft.split())
+            # Format according to professional email standards
+            formatted_draft = self._format_professional_email(improved_draft)
+
+            word_count = len(formatted_draft.split())
             self.add_reasoning(
-                f"✓ Draft reply completed ({word_count} words)", "success"
+                f"✓ Draft reply completed ({word_count} words, professionally formatted)",
+                "success",
             )
 
-            return improved_draft
+            return formatted_draft
 
         except Exception as e:
             self.add_reasoning(f"❌ Drafting error: {str(e)}", "error")
@@ -1096,3 +1100,90 @@ NOW WRITE YOUR RESPONSE (100-150 words):
                 },
             },
         }
+
+    def _format_professional_email(self, draft: str) -> str:
+        """
+        Format draft to follow professional email rules:
+        - Hi [Name], with blank line after greeting
+        - 3 paragraphs of content (2-3 sentences each)
+        - Blank line between each paragraph
+        - Thanks again, closing with [Your Name] signature
+        """
+        import re
+
+        draft = draft.strip()
+
+        # Remove any existing "Thanks again" or signature at the end
+        draft = re.sub(
+            r"\n*Thanks again,?\n*\[?Your Name\]?.*$", "", draft, flags=re.IGNORECASE
+        )
+        draft = re.sub(
+            r"\n*Best,?\n*\[?Your Name\]?.*$", "", draft, flags=re.IGNORECASE
+        )
+        draft = draft.strip()
+
+        # Extract greeting - look for "Hi Name," pattern
+        greeting = ""
+        body_text = draft
+
+        # Match greeting patterns like "Hi Sarah," or "Hello John,"
+        greeting_match = re.match(
+            r"^(Hi\s+\w+,?|Hello\s+\w+,?|Dear\s+\w+,?)", draft, re.IGNORECASE
+        )
+
+        if greeting_match:
+            greeting = greeting_match.group(0).strip()
+            body_text = draft[len(greeting) :].strip()
+            # Ensure greeting ends with comma
+            if not greeting.endswith(","):
+                greeting += ","
+        else:
+            greeting = "Hi there,"
+            body_text = draft
+
+        # Clean up body text - remove extra whitespace
+        body_text = re.sub(r"\s+", " ", body_text).strip()
+
+        # Split into sentences
+        sentences = re.split(r"(?<=[.!?])\s+", body_text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+
+        # Organize into exactly 3 paragraphs
+        total_sentences = len(sentences)
+
+        if total_sentences <= 3:
+            # Very short - make each sentence its own paragraph
+            paragraphs = sentences
+        elif total_sentences <= 6:
+            # Medium - split into 3 paragraphs of 2 sentences each
+            paragraphs = [
+                " ".join(sentences[0:2]),
+                " ".join(sentences[2:4]),
+                " ".join(sentences[4:]),
+            ]
+        else:
+            # Long - split evenly into 3 paragraphs
+            chunk_size = total_sentences // 3
+            paragraphs = [
+                " ".join(sentences[0:chunk_size]),
+                " ".join(sentences[chunk_size : chunk_size * 2]),
+                " ".join(sentences[chunk_size * 2 :]),
+            ]
+
+        # Remove empty paragraphs
+        paragraphs = [p for p in paragraphs if p.strip()]
+
+        # Build formatted email with proper line breaks
+        formatted_email = greeting + "\n\n"
+
+        for i, para in enumerate(paragraphs):
+            formatted_email += para
+            if i < len(paragraphs) - 1:
+                formatted_email += "\n\n"  # blank line between paragraphs
+
+        # Add closing section
+        formatted_email += "\n\n"  # blank line before closing
+        formatted_email += "Thanks again,\n"
+        formatted_email += "[Your Name]"
+
+        return formatted_email
