@@ -1,0 +1,425 @@
+"""
+AGI Desktop Intelligence Agent - Main Streamlit App
+Developer 2: Desktop UI
+"""
+
+import streamlit as st
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+# Page configuration
+st.set_page_config(
+    page_title="AGI Desktop Intelligence Agent",
+    page_icon="",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1a73e8;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .scenario-card {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1a73e8;
+    }
+    .source-card {
+        background-color: #e8f0fe;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Sidebar
+with st.sidebar:
+    st.image("https://via.placeholder.com/150x50/1a73e8/ffffff?text=AGI+Agent", width=150)
+    st.title("Navigation")
+    
+    scenario = st.radio(
+        "Choose Scenario",
+        ["Quick Start", "Email Intelligence", "Document Analysis", "Meeting Preparation"],
+        index=0
+    )
+    
+    st.markdown("---")
+    st.markdown("### About")
+    st.caption("AGI-Inspired Desktop Agent powered by Llama 3.3 70B and Linkup")
+    
+    st.markdown("---")
+    st.markdown("### Status")
+    # TODO: Add connection status indicators
+    st.success("Groq API Connected")
+    st.success("Linkup API Connected")
+
+# Main content
+st.markdown('<div class="main-header">AGI Desktop Intelligence Agent</div>', unsafe_allow_html=True)
+
+# Route to appropriate scenario
+if scenario == "Quick Start":
+    st.markdown("""
+    ### Welcome! Choose a scenario from the sidebar:
+    
+    - **Email Intelligence**: Analyze emails and draft intelligent responses using real-time web research
+    - **Document Analysis**: Extract and verify contract clauses against industry standards
+    - **Meeting Preparation**: Generate comprehensive briefings with past context and current news
+    
+    ### How it works:
+    1. Select a scenario from the sidebar
+    2. Provide your input (email text, document, or meeting info)
+    3. The agent will research using Linkup and generate results
+    4. Review the reasoning steps and sources
+    """)
+    
+    st.info("Select a scenario from the sidebar to get started")
+
+elif scenario == "Email Intelligence":
+    st.header("Email Intelligence")
+    st.markdown("Analyze emails and draft intelligent responses with real-time research")
+    
+    # TODO: Import email_ui component when ready
+    # For now, placeholder UI
+    
+    email_text = st.text_area(
+        "Paste email content here:",
+        height=200,
+        placeholder="From: investor@acmeventures.com\nSubject: Series A Discussion\n\nHi, we're interested in discussing your Series A round..."
+    )
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        analyze_button = st.button("Analyze Email", use_container_width=True, type="primary")
+    
+    if analyze_button and email_text:
+        with st.spinner("Analyzing email and researching..."):
+            # TODO: Call agent orchestrator
+            # from src.agents.orchestrator import AgentOrchestrator
+            # agent = AgentOrchestrator()
+            # result = agent.process(scenario="email", input_data={"email_content": email_text})
+            
+            # Placeholder result
+            st.success("Analysis complete!")
+            
+            # Reasoning steps
+            with st.expander("Reasoning Process", expanded=True):
+                st.write("1. Analyzing email content...")
+                st.write("2. Detected entity: Acme Ventures")
+                st.write("3. Searching Linkup for company info...")
+                st.write("4. Drafting informed response...")
+            
+            # Linkup sources
+            with st.expander("Web Research Sources"):
+                st.markdown("""
+                <div class="source-card">
+                <strong>Acme Ventures - Recent Investments</strong><br>
+                Acme Ventures recently invested in 3 AI startups...<br>
+                <a href="https://example.com">View Source</a>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Draft reply
+            st.subheader("Draft Reply")
+            st.text_area(
+                "Generated response:",
+                value="Dear [Investor Name],\n\nThank you for your interest in our Series A round...",
+                height=300
+            )
+
+elif scenario == "Document Analysis":
+    st.header("Document Analysis")
+    st.markdown("Upload a PDF contract and verify clauses against industry standards")
+    
+    uploaded_file = st.file_uploader("Upload PDF contract", type=['pdf'])
+    
+    if uploaded_file:
+        question = st.text_input(
+            "What would you like to analyze?",
+            placeholder="Are the payment terms standard for SaaS contracts?"
+        )
+        
+        if st.button("Analyze Document", type="primary"):
+            with st.spinner("Extracting and analyzing document..."):
+                # TODO: Call document agent
+                st.success("Analysis complete!")
+                
+                st.subheader("Analysis Results")
+                st.write("Payment Terms: Net-60 [WARNING] (Industry standard: Net-30)")
+
+elif scenario == "Meeting Preparation":
+    st.header("Meeting Preparation")
+    st.markdown("Describe your meeting in natural language and the assistant will prepare a comprehensive briefing.")
+
+    # ── Single Chat Input with Form (enables Ctrl+Enter) ───────
+    with st.form("meeting_form", clear_on_submit=False):
+        user_query = st.text_area(
+            "What would you like me to do?",
+            height=100,
+            placeholder="e.g., I have a meeting with TechCorp tomorrow about AI partnership. Prepare me.",
+            label_visibility="collapsed"
+        )
+        st.caption("e.g., *Prepare me for a meeting with TechCorp about partnership discussion*")
+        run_button = st.form_submit_button("Run", use_container_width=False, type="primary")
+
+    if run_button and user_query:
+        # ── Step 0: Extract intent from natural language via Groq ──
+        with st.spinner("Understanding your request..."):
+            try:
+                from src.agents.groq_client import GroqClient
+                groq = GroqClient()
+                extract_response = groq.chat(
+                    messages=[
+                        {"role": "system", "content": """Extract meeting details from the user's message.
+Return ONLY valid JSON with these keys:
+{"company_name": "...", "meeting_context": "..."}
+- company_name: The company or organization name mentioned. If none found, use "".
+- meeting_context: A brief summary of the meeting purpose/topic.
+Output ONLY the JSON object, nothing else."""},
+                        {"role": "user", "content": user_query}
+                    ],
+                    temperature=0.1
+                )
+                import json
+                content = extract_response.get('content', '{}')
+                cleaned = content.strip()
+                if cleaned.startswith('```'):
+                    lines = cleaned.split('\n')
+                    lines = [l for l in lines if not l.strip().startswith('```')]
+                    cleaned = '\n'.join(lines)
+                extracted = json.loads(cleaned)
+                company_name = extracted.get('company_name', '').strip()
+                meeting_context = extracted.get('meeting_context', user_query).strip()
+            except Exception as e:
+                company_name = ""
+                meeting_context = user_query
+                st.warning(f"Could not parse intent: {e}. Using raw input.")
+
+        if not company_name:
+            st.warning("Could not identify a company name from your request. Please mention a company, e.g., *Prepare me for a meeting with TechCorp*")
+        else:
+            # Show extracted intent
+            st.markdown(f"""
+            <div class="scenario-card">
+            <strong>Understood:</strong> Prepare briefing for meeting with <strong>{company_name}</strong><br>
+            <strong>Context:</strong> {meeting_context}
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+
+            with st.spinner(f"Researching {company_name} and preparing your briefing..."):
+                try:
+                    from src.agents.orchestrator import AgentOrchestrator
+                    agent = AgentOrchestrator()
+                    result = agent.process(
+                        scenario="meeting",
+                        input_data={
+                            "company_name": company_name,
+                            "meeting_context": meeting_context
+                        }
+                    )
+                except Exception as e:
+                    result = {
+                        'reasoning_steps': [{'step': 1, 'action': 'Error', 'detail': str(e), 'status': 'error'}],
+                        'linkup_sources': [],
+                        'result': f"Error: {e}",
+                        'past_interactions': {'emails': [], 'conversations': [], 'total': 0, 'last_contact': None, 'summary': ''},
+                        'briefing_data': {},
+                        'confidence': 0.0,
+                        'execution_time': 0,
+                        'source_attribution': {'memory_pct': 0, 'linkup_pct': 0, 'llm_pct': 100, 'memory_interactions': 0, 'linkup_sources_count': 0, 'data_freshness': 'N/A', 'sections': {}, 'verification_status': 'Unverified'}
+                    }
+
+            # Store result in session state so download doesn't clear it
+            st.session_state['meeting_result'] = result
+            st.session_state['meeting_company'] = company_name
+            st.session_state['meeting_context'] = meeting_context
+
+    # ── Render results from session state ──────────────────────
+    if 'meeting_result' in st.session_state:
+        result = st.session_state['meeting_result']
+        company_name = st.session_state['meeting_company']
+        meeting_context = st.session_state['meeting_context']
+        past = result.get('past_interactions', {})
+        attribution = result.get('source_attribution', {})
+
+        # ── Two-column layout: Briefing (left) + Analytics (right) ──
+        col_briefing, col_analytics = st.columns([3, 1])
+
+        with col_analytics:
+            st.markdown("### Content Analytics")
+            st.markdown("---")
+
+            # Source breakdown
+            st.markdown("**Source Breakdown**")
+            mem_pct = attribution.get('memory_pct', 0)
+            link_pct = attribution.get('linkup_pct', 0)
+            llm_pct = attribution.get('llm_pct', 100)
+
+            st.markdown(f"Web Research (Linkup): **{link_pct}%**")
+            st.progress(link_pct / 100)
+            st.markdown(f"Local Memory (Emails/Meetings): **{mem_pct}%**")
+            st.progress(mem_pct / 100)
+            st.markdown(f"LLM Knowledge (Llama 3.3): **{llm_pct}%**")
+            st.progress(llm_pct / 100)
+
+            st.markdown("---")
+
+            # Data quality indicators
+            st.markdown("**Data Quality**")
+            st.markdown(f"Confidence: **{result.get('confidence', 0):.0%}**")
+            st.markdown(f"Verification: **{attribution.get('verification_status', 'Unknown')}**")
+            st.markdown(f"Data Freshness: **{attribution.get('data_freshness', 'N/A')}**")
+
+            st.markdown("---")
+
+            # Raw counts
+            st.markdown("**Data Points Used**")
+            st.markdown(f"Past emails found: **{len(past.get('emails', []))}**")
+            real_meetings = [c for c in past.get('conversations', []) if not c.get('briefing_generated')]
+            st.markdown(f"Past meetings found: **{len(real_meetings)}**")
+            st.markdown(f"Web sources fetched: **{attribution.get('linkup_sources_count', 0)}**")
+            st.markdown(f"Processing time: **{result.get('execution_time', 0)}s**")
+
+            st.markdown("---")
+
+            # Per-section attribution
+            sections_attr = attribution.get('sections', {})
+            if sections_attr:
+                st.markdown("**Section Sources**")
+                section_labels = {
+                    'company_overview': 'Company Overview',
+                    'past_context': 'Relationship Context',
+                    'recent_news': 'Recent News',
+                    'talking_points': 'Talking Points',
+                    'risks_and_notes': 'Risks & Notes'
+                }
+                for key, label in section_labels.items():
+                    info = sections_attr.get(key, {})
+                    primary = info.get('primary_source', 'N/A')
+                    st.markdown(f"*{label}*: {primary}")
+
+        with col_briefing:
+            # ── Metrics Row ────────────────────────────────────
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Confidence", f"{result.get('confidence', 0):.0%}")
+            m2.metric("Past Interactions", past.get('total', 0))
+            m3.metric("Web Sources", len(result.get('linkup_sources', [])))
+            m4.metric("Time", f"{result.get('execution_time', 0)}s")
+
+            st.success("Briefing ready!")
+
+            # ── Reasoning Steps ────────────────────────────────
+            with st.expander("Reasoning Process", expanded=True):
+                st.markdown("[COMPLETE] **Step 0: Understanding request**")
+                st.caption(f"Extracted company: {company_name} | Context: {meeting_context}")
+                steps = result.get('reasoning_steps', [])
+                for step in steps:
+                    if isinstance(step, dict):
+                        status = step.get('status', '')
+                        tag = "[COMPLETE]" if status == 'complete' else "[ERROR]" if status == 'error' else "[PENDING]"
+                        st.markdown(f"{tag} **Step {step.get('step', '?')}: {step.get('action', '')}**")
+                        st.caption(step.get('detail', ''))
+                    else:
+                        st.write(f"- {step}")
+
+            # ── Past Interactions ──────────────────────────────
+            with st.expander("Past Interactions", expanded=False):
+                if past.get('emails'):
+                    st.markdown("**Past Emails:**")
+                    for em in past['emails'][:5]:
+                        body_text = (em.get('body', '') or '')
+                        body_display = body_text[:250] + ('...' if len(body_text) > 250 else '')
+                        st.markdown(f"""
+                        <div class="source-card">
+                        <strong>{em.get('subject', 'No subject')}</strong><br>
+                        From: {em.get('from', 'Unknown')} &nbsp;|&nbsp; Date: {em.get('date', 'Unknown')}<br>
+                        <em>{body_display}</em>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No past emails found for this company.")
+
+                real_meetings = [c for c in past.get('conversations', []) if not c.get('briefing_generated')]
+                if real_meetings:
+                    st.markdown("**Past Meetings:**")
+                    for conv in real_meetings[:5]:
+                        notes_text = (conv.get('notes', '') or '')
+                        notes_display = notes_text[:250] + ('...' if len(notes_text) > 250 else '')
+                        attendees = conv.get('attendees', [])
+                        attendees_str = ', '.join(attendees) if attendees else 'N/A'
+                        st.markdown(f"""
+                        <div class="source-card">
+                        <strong>{conv.get('topic', 'No topic')}</strong><br>
+                        Date: {conv.get('date', 'Unknown')} &nbsp;|&nbsp;
+                        Outcome: {conv.get('outcome', 'N/A')}<br>
+                        Attendees: {attendees_str}<br>
+                        <em>{notes_display}</em>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No past meetings found for this company.")
+
+            # ── Web Research Sources ───────────────────────────
+            with st.expander("Web Research Sources (Linkup)", expanded=False):
+                sources = result.get('linkup_sources', [])
+                if sources:
+                    for src in sources:
+                        st.markdown(f"""
+                        <div class="source-card">
+                        <strong>{src.get('title', 'Untitled')}</strong><br>
+                        {src.get('snippet', '')}<br>
+                        <a href="{src.get('url', '#')}" target="_blank">View Source</a>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No web sources found. Check Linkup API key in config/.env")
+
+            # ── The Briefing ───────────────────────────────────
+            st.subheader("Meeting Briefing")
+
+            briefing_data = result.get('briefing_data', {})
+            if briefing_data:
+                st.markdown("### Company Overview")
+                st.write(briefing_data.get('company_overview', 'N/A'))
+
+                st.markdown("### Relationship Context")
+                st.write(briefing_data.get('past_context', 'No past interactions found.'))
+
+                st.markdown("### Recent News & Developments")
+                st.write(briefing_data.get('recent_news', 'No recent news available.'))
+
+                st.markdown("### Recommended Talking Points")
+                for i, point in enumerate(briefing_data.get('talking_points', []), 1):
+                    st.markdown(f"**{i}.** {point}")
+
+                st.markdown("### Risks & Notes")
+                st.write(briefing_data.get('risks_and_notes', 'None identified.'))
+            else:
+                st.text(result.get('result', 'No briefing generated.'))
+
+            # ── Download Button (won't clear results — stored in session_state) ──
+            safe_name = company_name.lower().replace(' ', '_') if company_name else 'meeting'
+            st.download_button(
+                label="Download Briefing as Text",
+                data=result.get('result', ''),
+                file_name=f"briefing_{safe_name}.txt",
+                mime="text/plain"
+            )
+
+    elif run_button and not user_query:
+        st.warning("Please describe your meeting request.")
+
+# Footer
+st.markdown("---")
+st.caption("Built with Streamlit • Powered by Llama 3.3 70B + Linkup")

@@ -7,7 +7,9 @@ import os
 from linkup import LinkupClient
 from dotenv import load_dotenv
 
-load_dotenv('config/.env')
+# Use absolute path so it works regardless of cwd
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+load_dotenv(os.path.join(_project_root, 'config', '.env'))
 
 class LinkupWrapper:
     def __init__(self):
@@ -28,28 +30,30 @@ class LinkupWrapper:
             dict with sources, snippets, and URLs
         """
         try:
-            # TODO: Implement actual Linkup search
-            # This is a starter template - implement based on Linkup SDK docs
-            results = self.client.search(
+            response = self.client.search(
                 query=query,
                 depth=self.depth,
                 output_type=self.output_type
             )
             
+            # The SDK returns a LinkupSearchResults object with a .results list
+            # Each item is a LinkupSearchTextResult with .name, .url, .content attributes
+            items = response.results if hasattr(response, 'results') else []
+            
             # Parse and format results
             formatted_sources = []
-            for i, result in enumerate(results[:max_results]):
+            for i, item in enumerate(items[:max_results]):
                 formatted_sources.append({
-                    "title": result.get("title", ""),
-                    "url": result.get("url", ""),
-                    "snippet": result.get("content", "")[:200],  # First 200 chars
+                    "title": getattr(item, 'name', '') or '',
+                    "url": getattr(item, 'url', '') or '',
+                    "snippet": (getattr(item, 'content', '') or '')[:200],
                     "relevance": i + 1
                 })
             
             return {
                 "query": query,
                 "sources": formatted_sources,
-                "total_found": len(results)
+                "total_found": len(items)
             }
         
         except Exception as e:

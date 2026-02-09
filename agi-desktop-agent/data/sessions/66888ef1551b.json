@@ -1,0 +1,258 @@
+{
+  "session_id": "66888ef1551b",
+  "created_at": "2026-02-09T13:29:52.508252",
+  "updated_at": "2026-02-09T13:29:58.504416",
+  "title": "Prepare me for a meeting with TechCorp about partnership discussion",
+  "interactions": [
+    {
+      "id": 1,
+      "timestamp": "2026-02-09T13:29:58.504354",
+      "user_query": "Prepare me for a meeting with TechCorp about partnership discussion",
+      "route": {
+        "scenarios": [
+          "meeting"
+        ],
+        "primary_scenario": "meeting",
+        "params": {
+          "meeting": {
+            "company_name": "TechCorp",
+            "meeting_context": "partnership discussion"
+          }
+        },
+        "summary": "Prepare a meeting briefing for TechCorp about partnership discussion"
+      },
+      "results": {
+        "meeting": {
+          "reasoning_steps": [
+            {
+              "step": 1,
+              "action": "Searching local memory",
+              "detail": "Found 7 past interaction(s). Last contact: 2026-02-09.",
+              "status": "complete"
+            },
+            {
+              "step": 2,
+              "action": "Researching recent news",
+              "detail": "Found 4 news source(s) about TechCorp.",
+              "status": "complete"
+            },
+            {
+              "step": 3,
+              "action": "Researching products & funding",
+              "detail": "Found 4 additional source(s).",
+              "status": "complete"
+            },
+            {
+              "step": 4,
+              "action": "Generating briefing",
+              "detail": "Briefing generated successfully.",
+              "status": "complete"
+            },
+            {
+              "step": 5,
+              "action": "Briefing complete",
+              "detail": "Compiled data from 7 past interaction(s) and 8 web source(s).",
+              "status": "complete"
+            }
+          ],
+          "past_interactions": {
+            "emails": [
+              {
+                "id": "email_001",
+                "from": "sarah.chen@techcorp.com",
+                "to": "user@company.com",
+                "subject": "Partnership Discussion - AI Integration",
+                "date": "2025-12-10",
+                "body": "Hi, following up on our conversation at the AI summit last month. We're very interested in exploring a partnership around your AI agents platform. Our CTO, David Park, would love to schedule a deeper dive into how we might integrate your technology with our enterprise suite. Are you available next week for a 30-minute call?",
+                "company": "TechCorp"
+              },
+              {
+                "id": "email_002",
+                "from": "david.park@techcorp.com",
+                "to": "user@company.com",
+                "subject": "RE: API Access Request - Sandbox Environment",
+                "date": "2025-11-20",
+                "body": "Thanks for granting us sandbox access. Our engineering team has been testing the API endpoints and we're impressed with the response latency. We've run initial benchmarks and the results look promising for our use case. Let's discuss next steps for a pilot program. I'll loop in our VP of Product, Maria Santos, for the next meeting.",
+                "company": "TechCorp"
+              },
+              {
+                "id": "email_003",
+                "from": "maria.santos@techcorp.com",
+                "to": "user@company.com",
+                "subject": "TechCorp x Our Company - Pilot Proposal",
+                "date": "2025-10-15",
+                "body": "Following our initial discussions, I'd like to propose a 3-month pilot program. We would integrate your AI agent capabilities into our customer support workflow, targeting a 30% reduction in ticket resolution time. Budget for the pilot has been pre-approved by our leadership. Can we discuss scope and timeline?",
+                "company": "TechCorp"
+              },
+              {
+                "id": "email_006",
+                "from": "sarah.chen@techcorp.com",
+                "to": "user@company.com",
+                "subject": "Quick Update - TechCorp AI Strategy",
+                "date": "2025-09-05",
+                "body": "Just wanted to share that TechCorp is doubling down on AI this year. We've hired 50 new ML engineers and are building out our AI Center of Excellence. This aligns perfectly with the kind of partnership we discussed. Excited about the possibilities ahead.",
+                "company": "TechCorp"
+              }
+            ],
+            "conversations": [
+              {
+                "id": "meeting_004",
+                "company": "TechCorp",
+                "topic": "partnership discussion",
+                "notes": "Briefing prepared. 6 past interactions found.",
+                "briefing_generated": "═══════════════════════════════════════════\n  MEETING BRIEFING: TECHCORP\n  Prepared: February 09, 2026 at 12:09 PM\n═══════════════════════════════════════════\n\n📋 COMPANY OVERVIEW\nTechCorp is a technology company that has been actively exploring AI integration and has recently doubled down on AI by hiring 50 new ML engineers and building out its AI Center of Excellence. The company has a React frontend, Node.js backend, and PostgreSQL stack. TechCorp is interested in customer support automation a",
+                "date": "2026-02-09",
+                "timestamp": "2026-02-09T12:09:09.078948"
+              },
+              {
+                "id": "meeting_002",
+                "company": "TechCorp",
+                "topic": "Technical Deep Dive - API Integration",
+                "date": "2025-11-15",
+                "attendees": [
+                  "David Park (TechCorp)",
+                  "Engineering Team",
+                  "User"
+                ],
+                "notes": "Reviewed API architecture and integration patterns. TechCorp's stack: React frontend, Node.js backend, PostgreSQL. Discussed webhook-based integration approach. Benchmark results showed 150ms average response time - well within their requirements. TechCorp plans to integrate into their Tier 1 support workflow first.",
+                "outcome": "Technical feasibility confirmed",
+                "next_steps": "TechCorp to run internal benchmarks, prepare pilot proposal"
+              },
+              {
+                "id": "meeting_001",
+                "company": "TechCorp",
+                "topic": "Initial Partnership Exploration",
+                "date": "2025-10-20",
+                "attendees": [
+                  "Sarah Chen (TechCorp)",
+                  "David Park (TechCorp)",
+                  "User"
+                ],
+                "notes": "Discussed potential integration of our AI agents into TechCorp's enterprise suite. TechCorp interested in customer support automation. Key concerns: data privacy, latency requirements (<200ms), and scalability to 10K concurrent users. Action items: provide sandbox API access, schedule follow-up with engineering teams.",
+                "outcome": "Positive - moving forward with sandbox evaluation",
+                "next_steps": "Grant API sandbox access, schedule technical deep-dive"
+              }
+            ],
+            "total": 7,
+            "last_contact": "2026-02-09",
+            "summary": "Found 4 past email(s):\n  - [2025-12-10] From: sarah.chen@techcorp.com | Subject: Partnership Discussion - AI Integration\n    Preview: Hi, following up on our conversation at the AI summit last month. We're very interested in exploring a partnership around your AI agents platform. Our\n  - [2025-11-20] From: david.park@techcorp.com | Subject: RE: API Access Request - Sandbox Environment\n    Preview: Thanks for granting us sandbox access. Our engineering team has been testing the API endpoints and we're impressed with the response latency. We've ru\n  - [2025-10-15] From: maria.santos@techcorp.com | Subject: TechCorp x Our Company - Pilot Proposal\n    Preview: Following our initial discussions, I'd like to propose a 3-month pilot program. We would integrate your AI agent capabilities into our customer suppor\n  - [2025-09-05] From: sarah.chen@techcorp.com | Subject: Quick Update - TechCorp AI Strategy\n    Preview: Just wanted to share that TechCorp is doubling down on AI this year. We've hired 50 new ML engineers and are building out our AI Center of Excellence.\n\nFound 3 past meeting(s)/conversation(s):\n  - [2026-02-09] Topic: partnership discussion\n    Notes: Briefing prepared. 6 past interactions found.\n  - [2025-11-15] Topic: Technical Deep Dive - API Integration\n    Notes: Reviewed API architecture and integration patterns. TechCorp's stack: React frontend, Node.js backend, PostgreSQL. Discussed webhook-based integration\n  - [2025-10-20] Topic: Initial Partnership Exploration\n    Notes: Discussed potential integration of our AI agents into TechCorp's enterprise suite. TechCorp interested in customer support automation. Key concerns: d"
+          },
+          "linkup_sources": [
+            {
+              "title": "30 Top Tech Startups in 2026: AI, Robotics, and Others Raising Billions",
+              "url": "https://wellows.com/blog/tech-startups/",
+              "snippet": "Deepgram secured $130M in Series C funding in January 2026 to scale its enterprise voice AI platform, reinforcing AI infrastructure dominance in tech startup news January 2026. ... HawkEye 360 raised ",
+              "relevance": 1
+            },
+            {
+              "title": "Reuters Tech News | Today's Latest Technology News | Reuters",
+              "url": "https://www.reuters.com/technology/",
+              "snippet": "February 7, 2026 · Businessca... puts spotlight on Apple · February 6, 2026 · BusinesscategoryBig Tech&#x27;s quarter in four charts: AI splurge and cloud growth ·...\nFebruary 6, 2026 · Businesscatego",
+              "relevance": 2
+            },
+            {
+              "title": "TechCrunch | Startup and Technology News",
+              "url": "https://techcrunch.com/",
+              "snippet": "January 1 – December 31, 2026 · Waitlist Now · Be the first to know when StrictlyVC events go live · June 23, 2026 · Register Now · Save up to $300 with Super Early Bird rates · San Francisco, CA Octo",
+              "relevance": 3
+            },
+            {
+              "title": "Industry Tech Trends for 2026: What 2025 Taught us and Where We’re Heading Next - Vidya",
+              "url": "https://vidyatec.com/blog/industry-tech-trends-for-2026/",
+              "snippet": "Gartner’s 2026 report emphasizes not only computing power but also AI Security Platforms, Preemptive Cybersecurity, Digital Provenance, and Confidential Computing as essential building blocks to manag",
+              "relevance": 4
+            },
+            {
+              "title": "TECH CORP (IT Consulting and Outsourcing) 2025 Company Profile: Valuation, Funding & Investors | PitchBook",
+              "url": "https://pitchbook.com/profiles/company/525688-21",
+              "snippet": "Information on valuation, funding, cap tables, investors, and executives for TECH CORP (IT Consulting and Outsourcing). Use the PitchBook Platform to explore the full profile.",
+              "relevance": 1
+            },
+            {
+              "title": "Techcorp Ltd. - Crunchbase Company Profile & Funding",
+              "url": "https://www.crunchbase.com/organization/techcorp-ltd",
+              "snippet": "Techcorp Ltd. is a design and engineering company, specializing in computer and video game accessories.",
+              "relevance": 2
+            },
+            {
+              "title": "Transforming TechCorp United with OKRs",
+              "url": "https://blog.processology.net/transforming-with-okrs",
+              "snippet": "Product Team Objective: &quot;Deliver a user experience that wows small business owners&quot; Key Result 1: Reduce average task completion time by 20% Key Result 2: Increase feature adoption rate from",
+              "relevance": 3
+            },
+            {
+              "title": "American Techcorp - Overview, News & Similar companies | ZoomInfo.com",
+              "url": "https://www.zoominfo.com/c/american-techcorp/3573675",
+              "snippet": "Gather financial insights about American Techcorp, including details on funding rounds, investors, total funding, and acquisitions, to gain a comprehensive understanding of their financial strategy.\nG",
+              "relevance": 4
+            }
+          ],
+          "result": "═══════════════════════════════════════════\n  MEETING BRIEFING: TECHCORP\n  Prepared: February 09, 2026 at 01:29 PM\n═══════════════════════════════════════════\n\n📋 COMPANY OVERVIEW\nTechCorp is an IT consulting and outsourcing company that has been exploring a partnership with our company, particularly around AI integration. They have a strong focus on design and engineering, and have been investing in AI infrastructure. TechCorp has a global presence and offers a range of services, including IT consulting, outsourcing, and product development.\n\n🔄 PAST INTERACTIONS\nWe have had several interactions with TechCorp in the past, including email exchanges and meetings. They have expressed interest in integrating our AI agents into their customer support platform and have been testing our API endpoints. We have also discussed potential partnership opportunities, including a 3-month pilot program.\n\n📰 RECENT NEWS & DEVELOPMENTS\nRecent news highlights the growing importance of AI in the tech industry, with companies like Deepgram securing significant funding for their enterprise voice AI platform. TechCorp has also been emphasizing the importance of AI in their strategy, with a focus on building out their AI Center of Excellence and hiring new ML engineers.\n\n💬 RECOMMENDED TALKING POINTS\n  1. Partnership opportunities for AI integration\n  2. Technical requirements for API integration\n  3. Potential pilot program for customer support automation\n  4. Addressing key concerns around data security and scalability\n\n⚠️ RISKS & NOTES\nWe should be cautious about the competitive landscape and the potential risks of partnering with a company that is rapidly expanding its AI capabilities. We should also be prepared to address any concerns around data security and scalability, and to discuss the technical requirements for a successful integration.\n\n═══════════════════════════════════════════",
+          "briefing_data": {
+            "company_overview": "TechCorp is an IT consulting and outsourcing company that has been exploring a partnership with our company, particularly around AI integration. They have a strong focus on design and engineering, and have been investing in AI infrastructure. TechCorp has a global presence and offers a range of services, including IT consulting, outsourcing, and product development.",
+            "past_context": "We have had several interactions with TechCorp in the past, including email exchanges and meetings. They have expressed interest in integrating our AI agents into their customer support platform and have been testing our API endpoints. We have also discussed potential partnership opportunities, including a 3-month pilot program.",
+            "recent_news": "Recent news highlights the growing importance of AI in the tech industry, with companies like Deepgram securing significant funding for their enterprise voice AI platform. TechCorp has also been emphasizing the importance of AI in their strategy, with a focus on building out their AI Center of Excellence and hiring new ML engineers.",
+            "talking_points": [
+              "Partnership opportunities for AI integration",
+              "Technical requirements for API integration",
+              "Potential pilot program for customer support automation",
+              "Addressing key concerns around data security and scalability"
+            ],
+            "risks_and_notes": "We should be cautious about the competitive landscape and the potential risks of partnering with a company that is rapidly expanding its AI capabilities. We should also be prepared to address any concerns around data security and scalability, and to discuss the technical requirements for a successful integration."
+          },
+          "confidence": 1.0,
+          "source_attribution": {
+            "memory_pct": 40,
+            "linkup_pct": 50,
+            "llm_pct": 10,
+            "memory_interactions": 7,
+            "linkup_sources_count": 8,
+            "data_freshness": "Real-time",
+            "sections": {
+              "company_overview": {
+                "primary_source": "Web Research (Linkup)",
+                "sources_used": [
+                  "Linkup",
+                  "LLM"
+                ]
+              },
+              "past_context": {
+                "primary_source": "Local Memory",
+                "sources_used": [
+                  "Local Memory",
+                  "LLM"
+                ]
+              },
+              "recent_news": {
+                "primary_source": "Web Research (Linkup)",
+                "sources_used": [
+                  "Linkup",
+                  "LLM"
+                ]
+              },
+              "talking_points": {
+                "primary_source": "LLM Synthesis",
+                "sources_used": [
+                  "Local Memory",
+                  "Linkup",
+                  "LLM"
+                ]
+              },
+              "risks_and_notes": {
+                "primary_source": "LLM Analysis",
+                "sources_used": [
+                  "Local Memory",
+                  "Linkup",
+                  "LLM"
+                ]
+              }
+            },
+            "verification_status": "Cross-verified"
+          },
+          "execution_time": 5.68
+        }
+      },
+      "execution_time": 5.99
+    }
+  ]
+}
