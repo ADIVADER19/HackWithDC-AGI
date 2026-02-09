@@ -4,8 +4,14 @@ Agent Orchestrator - Main API for all agent operations
 Supports two modes:
   1. Direct: process(scenario="meeting", input_data={...})
   2. Routed: route(user_prompt) → auto-classifies → dispatches to agent(s)
+
+With Google API integration (optional):
+  - Fetches real emails from Gmail when enabled
+  - Fetches real calendar events from Google Calendar when enabled
+  - Falls back to local cache files if APIs unavailable
 """
 
+import os
 import time
 from .groq_client import GroqClient
 from .linkup_wrapper import LinkupWrapper
@@ -19,10 +25,72 @@ class AgentOrchestrator:
     def __init__(self):
         self.groq = GroqClient()
         self.linkup = LinkupWrapper()
-        self.memory = MemoryStore()
+        
+        # Initialize Google API clients (optional)
+        self.gmail_client = None
+        self.calendar_client = None
+        self._init_google_apis()
+        
+        # Initialize memory with optional Google clients
+        self.memory = MemoryStore(
+            gmail_client=self.gmail_client,
+            calendar_client=self.calendar_client
+        )
         self.router = RouterAgent(self.groq)
         self.meeting_agent = MeetingAgent(self.groq, self.linkup, self.memory)
         self.sessions = SessionStore()
+
+    def _init_google_apis(self):
+        """
+        Initialize Google API clients if ENABLE_GOOGLE_APIS is true.
+        Gracefully handles missing credentials or network errors.
+        """
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(os.path.join(
+                os.path.dirname(__file__),
+                '..', '..', 'config', '.env'
+            ))
+            
+            enable_google = os.getenv('ENABLE_GOOGLE_APIS', 'false').lower() == 'true'
+            
+            if not enable_google:
+                print("[Orchestrator] Google APIs disabled (set ENABLE_GOOGLE_APIS=true to enable)")
+                return
+            
+            # Import Google clients
+            from ..integrations.google_auth import GoogleAuthHandler
+            from ..integrations.gmail_client import GmailClient
+            from ..integrations.calendar_client import CalendarClient
+            
+            # Initialize auth
+            credentials_file = os.getenv(
+                'GOOGLE_CREDENTIALS_FILE',
+                os.path.join(
+                    os.path.dirname(__file__),
+                    '..', '..', 'config', 'google_credentials.json'
+                )
+            )
+            
+            if not os.path.exists(credentials_file):
+                print(f"[Orchestrator] Google credentials not found at {credentials_file}")
+                print("[Orchestrator] To enable Gmail/Calendar: download OAuth 2.0 credentials from Google Cloud Console")
+                print("[Orchestrator] and save as config/google_credentials.json, then set ENABLE_GOOGLE_APIS=true")
+                return
+            
+            auth = GoogleAuthHandler(credentials_file=credentials_file)
+            self.gmail_client = GmailClient(auth)
+            self.calendar_client = CalendarClient(auth)
+            print("[Orchestrator] Google APIs initialized successfully")
+            print("[Orchestrator] - Gmail client ready")
+            print("[Orchestrator] - Google Calendar client ready")
+            
+        except ImportError as e:
+            print(f"[Orchestrator] Google API libraries not installed: {e}")
+            print("[Orchestrator] Install with: pip install google-auth-oauthlib")
+        except Exception as e:
+            print(f"[Orchestrator] Google API initialization failed: {e}")
+            print("[Orchestrator] Falling back to local cache files")
 
     # ── Public API ─────────────────────────────────────────────
 
