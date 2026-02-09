@@ -1,194 +1,402 @@
-"""
-AGI Desktop Intelligence Agent - Main Streamlit App
-Developer 2: Desktop UI
-"""
-
 import streamlit as st
-import sys
-import os
+import time
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
-# Page configuration
 st.set_page_config(
-    page_title="AGI Desktop Intelligence Agent",
-    page_icon="🤖",
+    page_title="AI Assistant",
+    page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed",
 )
 
-# Custom CSS
+# ── Session state ──
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "suggestion" not in st.session_state:
+    st.session_state.suggestion = ""
+if "pending_task" not in st.session_state:
+    st.session_state.pending_task = None
+if "awaiting_review" not in st.session_state:
+    st.session_state.awaiting_review = False
+
+# ── CSS ──
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #1a73e8;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .scenario-card {
-        background-color: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1a73e8;
-    }
-    .source-card {
-        background-color: #e8f0fe;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
+header[data-testid="stHeader"] { display: none !important; }
+section[data-testid="stSidebar"] { display: none !important; }
+footer { display: none !important; }
+#MainMenu { display: none !important; }
+div.block-container {
+    padding-top: 0 !important; padding-bottom: 0 !important;
+    padding-left: 0 !important; padding-right: 0 !important;
+    max-width: 100% !important;
+}
+.stApp {
+    background: #fbfbfd !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    margin: 0 !important; padding: 0 !important;
+}
+.stApp > div:first-child { margin: 0 !important; padding: 0 !important; }
+div[data-testid="stAppViewContainer"] { padding: 0 !important; margin: 0 !important; }
+section.main > div { padding-top: 0 !important; margin-top: 0 !important; }
+.element-container:first-child { margin-top: 0 !important; padding-top: 0 !important; }
+
+/* Text area */
+div[data-testid="stTextArea"] textarea {
+    background: #fff !important; border: 1px solid #e0e0e5 !important;
+    border-radius: 0.75rem !important; padding: 0.85rem 1rem !important;
+    font-size: 0.9375rem !important; color: #111827 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+    resize: none !important;
+}
+div[data-testid="stTextArea"] textarea:focus {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.15) !important;
+}
+
+/* Suggestion card buttons */
+.suggestion-card div.stButton > button {
+    background: #fff !important; border: 1px solid #ebebef !important;
+    border-radius: 0.75rem !important; padding: 1.5rem 1.25rem !important;
+    height: auto !important;
+    white-space: normal !important; color: #111827 !important;
+    box-shadow: none !important; transition: box-shadow 0.15s ease !important;
+    width: 100% !important;
+}
+.suggestion-card div.stButton > button:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06) !important;
+    border-color: #d0d0d8 !important; color: #111827 !important;
+}
+
+/* Secondary action buttons */
+.action-button div.stButton > button {
+    background: #fff !important; border: 1px solid #e0e0e5 !important;
+    border-radius: 0.5rem !important; color: #374151 !important;
+}
+.action-button div.stButton > button:hover {
+    background: #f3f4f6 !important; color: #111827 !important;
+    border-color: #d0d0d8 !important;
+}
+
+/* Primary button */
+div.stButton > button[kind="primary"] {
+    background: #6366f1 !important; color: #fff !important;
+    border: none !important; border-radius: 0.5rem !important;
+    padding: 0.5rem 1.25rem !important; font-weight: 500 !important;
+    font-size: 0.875rem !important; min-height: 2.5rem !important;
+}
+div.stButton > button[kind="primary"]:hover { background: #4f46e5 !important; }
+
+/* All buttons baseline */
+div.stButton > button {
+    min-height: 2.5rem !important;
+    font-size: 0.875rem !important;
+    padding: 0.5rem 1.25rem !important;
+}
+
+/* Attach files expander */
+div[data-testid="stExpander"] {
+    border: 1px solid #e0e0e5 !important; border-radius: 0.5rem !important;
+    background: #fff !important; margin-bottom: 0.5rem !important;
+}
+div[data-testid="stExpander"] summary {
+    font-size: 0.8125rem !important; color: #6b7280 !important;
+    font-weight: 500 !important; padding: 0.5rem 0.85rem !important;
+}
+div[data-testid="stExpander"] summary:hover { color: #111827 !important; }
+div[data-testid="stExpander"] div[data-testid="stExpanderDetails"] {
+    padding: 0.5rem 0.85rem 0.75rem !important;
+}
+
+/* Timeline step cards */
+.step-card {
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    padding: 0.6rem 0.85rem; border-radius: 0.5rem;
+    margin-bottom: 0.35rem; background: #fff;
+    border: 1px solid #ebebef; font-size: 0.8125rem;
+}
+.step-card.active { border-color: #6366f1; background: #f5f3ff; }
+.step-card.done { border-color: #d1fae5; background: #f0fdf4; }
+.step-icon {
+    width: 1.25rem; height: 1.25rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; flex-shrink: 0; margin-top: 0.1rem;
+}
+.step-icon.done { background: #10b981; color: #fff; }
+.step-icon.active { background: #6366f1; color: #fff; }
+.step-icon.pending { background: #e5e7eb; color: #9ca3af; }
+.step-label { color: #111827; line-height: 1.4; }
+.step-label.pending { color: #9ca3af; }
+
+/* Chat bubbles */
+.user-msg {
+    background: #f5f3ff; border: 1px solid #e0e0e5; border-radius: 0.75rem;
+    padding: 0.85rem 1.1rem; margin-bottom: 0.75rem;
+}
+.user-msg-label { font-size: 0.7rem; color: #6b7280; font-weight: 600; margin-bottom: 0.2rem; text-transform: uppercase; }
+.user-msg-text { font-size: 0.9375rem; color: #111827; white-space: pre-wrap; }
+.agent-msg {
+    background: #fff; border: 1px solid #ebebef; border-radius: 0.75rem;
+    padding: 0.85rem 1.1rem; margin-bottom: 0.75rem;
+}
+.agent-msg-label { font-size: 0.7rem; color: #6366f1; font-weight: 600; margin-bottom: 0.2rem; text-transform: uppercase; }
+.agent-msg-text { font-size: 0.9375rem; color: #111827; white-space: pre-wrap; line-height: 1.6; }
+.status-badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.75rem; font-weight: 500; padding: 0.25rem 0.6rem;
+    border-radius: 1rem; margin-bottom: 0.75rem;
+}
+.status-approved { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.status-rejected { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.section-divider { border: none; border-top: 1px solid #ebebef; margin: 1.5rem 0; }
 </style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
 """, unsafe_allow_html=True)
 
-# Sidebar
-with st.sidebar:
-    st.image("https://via.placeholder.com/150x50/1a73e8/ffffff?text=AGI+Agent", width=150)
-    st.title("Navigation")
-    
-    scenario = st.radio(
-        "Choose Scenario",
-        ["🎯 Quick Start", "📧 Email Intelligence", "📄 Document Analysis", "📅 Meeting Preparation"],
-        index=0
+
+# ═══════════════════════════════════════════
+#  1. HEADER (fixed top)
+# ═══════════════════════════════════════════
+is_processing = st.session_state.pending_task is not None
+is_review = st.session_state.awaiting_review
+
+if is_processing:
+    status_label, dot_color = "Processing…", "#6366f1"
+elif is_review:
+    status_label, dot_color = "Awaiting review", "#f59e0b"
+else:
+    status_label, dot_color = "Ready", "#9ca3af"
+
+st.markdown(f"""
+<div style="position:fixed;top:0;left:0;right:0;z-index:9999;display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;background:#fff;border-bottom:1px solid #ebebef;">
+  <div style="display:flex;align-items:center;gap:0.5rem;">
+    <div style="width:1.75rem;height:1.75rem;border-radius:0.5rem;background:#6366f1;display:flex;align-items:center;justify-content:center;">
+      <span class="material-symbols-outlined" style="font-size:15px;color:#fff;">shield</span>
+    </div>
+    <span style="font-weight:600;font-size:0.9375rem;color:#111827;">Assistant</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.8125rem;color:#6b7280;font-weight:500;">
+    <span style="width:8px;height:8px;border-radius:9999px;background:{dot_color};display:inline-block;"></span>
+    {status_label}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('<div style="height:3.5rem;"></div>', unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════
+#  2. HERO + SUGGESTION CARDS (always shown)
+# ═══════════════════════════════════════════
+st.markdown("""
+<div style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:3.5rem 1rem 2rem;">
+  <div style="margin-bottom:1.25rem;color:#c4c7d0;">
+    <span class="material-symbols-outlined" style="font-size:3.5rem;font-weight:200;">shield</span>
+  </div>
+  <div style="font-size:1.375rem;font-weight:600;color:#111827;margin-bottom:0.5rem;">Ready to assist</div>
+  <div style="font-size:0.9375rem;color:#6b7280;max-width:28rem;line-height:1.6;">
+    Describe a task in natural language and the assistant will help you complete it safely and transparently.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+SUGGESTIONS = {
+    "btn_doc": "Analyze the uploaded document — summarize key points and list important obligations.",
+    "btn_cal": "Check my calendar for this week and find a free 30-minute slot for a team sync.",
+    "btn_email": "Draft a professional follow-up email summarizing today's meeting and next steps.",
+}
+cols = st.columns([1, 1, 1, 1, 1])
+with cols[1]:
+    st.markdown('<div class="suggestion-card">', unsafe_allow_html=True)
+    if st.button("📄\n\n**Document Analysis**\n\nUpload and analyze PDFs, contracts, reports — get structured summaries and key insights.", key="btn_doc", use_container_width=True):
+        st.session_state.suggestion = SUGGESTIONS["btn_doc"]
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+with cols[2]:
+    st.markdown('<div class="suggestion-card">', unsafe_allow_html=True)
+    if st.button("📅\n\n**Calendar**\n\nView upcoming events, schedule meetings, and find optimal time slots automatically.", key="btn_cal", use_container_width=True):
+        st.session_state.suggestion = SUGGESTIONS["btn_cal"]
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+with cols[3]:
+    st.markdown('<div class="suggestion-card">', unsafe_allow_html=True)
+    if st.button("✉️\n\n**Email**\n\nDraft, review, and send emails with context-aware suggestions and tone control.", key="btn_email", use_container_width=True):
+        st.session_state.suggestion = SUGGESTIONS["btn_email"]
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════
+#  3. CHAT HISTORY (between suggestions & input)
+# ═══════════════════════════════════════════
+has_messages = len(st.session_state.messages) > 0
+
+if has_messages:
+    _, chat_col, _ = st.columns([1, 2.5, 1])
+    with chat_col:
+        st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+        for msg in st.session_state.messages:
+            if msg["type"] == "user":
+                st.markdown(f"""
+                <div class="user-msg">
+                  <div class="user-msg-label">You</div>
+                  <div class="user-msg-text">{msg["content"]}</div>
+                </div>""", unsafe_allow_html=True)
+
+            elif msg["type"] == "steps":
+                st.markdown('<div style="margin-bottom:0.75rem;">', unsafe_allow_html=True)
+                for step in msg["content"]:
+                    st.markdown(f"""
+                    <div class="step-card done">
+                      <div class="step-icon done">✓</div>
+                      <div class="step-label">{step}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            elif msg["type"] == "result":
+                st.markdown(f"""
+                <div class="agent-msg">
+                  <div class="agent-msg-label">Assistant</div>
+                  <div class="agent-msg-text">{msg["content"]}</div>
+                </div>""", unsafe_allow_html=True)
+
+            elif msg["type"] == "status":
+                cls = "status-approved" if msg["content"] == "approved" else "status-rejected"
+                icon = "✅" if msg["content"] == "approved" else "❌"
+                label = "Approved" if msg["content"] == "approved" else "Rejected"
+                st.markdown(f'<div class="status-badge {cls}">{icon} {label}</div>', unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════
+#  4. PROCESSING ANIMATION (between chat & input)
+# ═══════════════════════════════════════════
+if st.session_state.pending_task is not None:
+    _, proc_col, _ = st.columns([1, 2.5, 1])
+
+    STEPS = [
+        "Understanding your request…",
+        "Researching relevant information…",
+        "Analyzing data and context…",
+        "Generating output…",
+        "Preparing results for review",
+    ]
+
+    with proc_col:
+        st.markdown("""
+        <div style="font-size:0.8rem;font-weight:600;color:#6b7280;margin-bottom:0.5rem;text-transform:uppercase;">Agent Activity</div>
+        """, unsafe_allow_html=True)
+
+    timeline_placeholder = st.empty()
+
+    for step_idx in range(len(STEPS)):
+        steps_html = ""
+        for i, label in enumerate(STEPS):
+            if i < step_idx:
+                cls, icon_cls, icon = "done", "done", "✓"
+            elif i == step_idx:
+                cls, icon_cls, icon = "active", "active", "●"
+            else:
+                cls, icon_cls, icon = "", "pending", "○"
+            label_cls = "pending" if i > step_idx else ""
+            steps_html += f"""
+            <div class="step-card {cls}">
+              <div class="step-icon {icon_cls}">{icon}</div>
+              <div class="step-label {label_cls}">{label}</div>
+            </div>"""
+
+        with timeline_placeholder.container():
+            _, c, _ = st.columns([1, 2.5, 1])
+            with c:
+                st.markdown(steps_html, unsafe_allow_html=True)
+        time.sleep(1.2)
+
+    st.session_state.messages.append({"type": "steps", "content": STEPS})
+
+    result_text = (
+        "Based on my analysis, here are the key findings:\n\n"
+        "1. The document contains 3 main sections covering project scope, timeline, and budget.\n"
+        "2. Key deadline: All deliverables due by March 15, 2026.\n"
+        "3. Budget allocation: 40% development, 30% testing, 20% deployment, 10% contingency.\n"
+        "4. Risk factors identified: resource availability, third-party dependencies.\n\n"
+        "Recommended next steps:\n"
+        "- Schedule a kickoff meeting with all stakeholders\n"
+        "- Confirm resource allocation with team leads\n"
+        "- Set up progress tracking milestones"
     )
-    
-    st.markdown("---")
-    st.markdown("### About")
-    st.caption("AGI-Inspired Desktop Agent powered by Llama 3.3 70B and Linkup")
-    
-    st.markdown("---")
-    st.markdown("### Status")
-    # TODO: Add connection status indicators
-    st.success("✅ Groq API")
-    st.success("✅ Linkup API")
+    st.session_state.messages.append({"type": "result", "content": result_text})
+    st.session_state.pending_task = None
+    st.session_state.awaiting_review = True
+    st.rerun()
 
-# Main content
-st.markdown('<div class="main-header">🤖 AGI Desktop Intelligence Agent</div>', unsafe_allow_html=True)
 
-# Route to appropriate scenario
-if scenario == "🎯 Quick Start":
-    st.markdown("""
-    ### Welcome! Choose a scenario from the sidebar:
-    
-    - **📧 Email Intelligence**: Analyze emails and draft intelligent responses using real-time web research
-    - **📄 Document Analysis**: Extract and verify contract clauses against industry standards
-    - **📅 Meeting Preparation**: Generate comprehensive briefings with past context and current news
-    
-    ### How it works:
-    1. Select a scenario from the sidebar
-    2. Provide your input (email text, document, or meeting info)
-    3. The agent will research using Linkup and generate results
-    4. Review the reasoning steps and sources
-    """)
-    
-    st.info("👈 Select a scenario from the sidebar to get started")
+# ═══════════════════════════════════════════
+#  5. REVIEW BUTTONS (between chat & input)
+# ═══════════════════════════════════════════
+if st.session_state.awaiting_review:
+    _, rev_col, _ = st.columns([1, 2.5, 1])
+    with rev_col:
+        st.markdown("""
+        <div style="font-size:0.8125rem;color:#6b7280;margin-bottom:0.5rem;">Review the output above, then choose an action:</div>
+        """, unsafe_allow_html=True)
+        # Buttons temporarily disabled
+        # b1, b2, b3, b4 = st.columns(4, gap="small")
+        # with b2:
+        #     st.markdown('<div class="action-button">', unsafe_allow_html=True)
+        #     if st.button("✅ Approve", key="approve_btn", type="primary", use_container_width=True):
+        #         st.session_state.messages.append({"type": "status", "content": "approved"})
+        #         st.session_state.awaiting_review = False
+        #         st.rerun()
+        #     st.markdown('</div>', unsafe_allow_html=True)
+        # with b3:
+        #     st.markdown('<div class="action-button">', unsafe_allow_html=True)
+        #     if st.button("✏️ Revise", key="revise_btn", use_container_width=True):
+        #         st.session_state.pending_task = st.session_state.messages[-1]["content"] if st.session_state.messages else ""
+        #         st.session_state.awaiting_review = False
+        #         st.rerun()
+        #     st.markdown('</div>', unsafe_allow_html=True)
+        # with b4:
+        #     st.markdown('<div class="action-button">', unsafe_allow_html=True)
+        #     if st.button("❌ Reject", key="reject_btn", use_container_width=True):
+        #         st.session_state.messages.append({"type": "status", "content": "rejected"})
+        #         st.session_state.awaiting_review = False
+        #         st.rerun()
+        #     st.markdown('</div>', unsafe_allow_html=True)
 
-elif scenario == "📧 Email Intelligence":
-    st.header("📧 Email Intelligence")
-    st.markdown("Analyze emails and draft intelligent responses with real-time research")
-    
-    # TODO: Import email_ui component when ready
-    # For now, placeholder UI
-    
-    email_text = st.text_area(
-        "Paste email content here:",
-        height=200,
-        placeholder="From: investor@acmeventures.com\nSubject: Series A Discussion\n\nHi, we're interested in discussing your Series A round..."
+
+# ═══════════════════════════════════════════
+#  6. INPUT BOX (always at the very end)
+# ═══════════════════════════════════════════
+st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+_, input_col, _ = st.columns([1, 2, 1])
+with input_col:
+    user_input = st.text_area(
+        "Task input",
+        value=st.session_state.suggestion,
+        placeholder="What would you like me to do?",
+        key="task_input",
+        height=110,
+        label_visibility="collapsed",
     )
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        analyze_button = st.button("🔍 Analyze Email", use_container_width=True, type="primary")
-    
-    if analyze_button and email_text:
-        with st.spinner("Analyzing email and researching..."):
-            # TODO: Call agent orchestrator
-            # from src.agents.orchestrator import AgentOrchestrator
-            # agent = AgentOrchestrator()
-            # result = agent.process(scenario="email", input_data={"email_content": email_text})
-            
-            # Placeholder result
-            st.success("✅ Analysis complete!")
-            
-            # Reasoning steps
-            with st.expander("🧠 Reasoning Process", expanded=True):
-                st.write("1. Analyzing email content...")
-                st.write("2. Detected entity: Acme Ventures")
-                st.write("3. Searching Linkup for company info...")
-                st.write("4. Drafting informed response...")
-            
-            # Linkup sources
-            with st.expander("🔍 Web Research Sources"):
-                st.markdown("""
-                <div class="source-card">
-                <strong>Acme Ventures - Recent Investments</strong><br>
-                Acme Ventures recently invested in 3 AI startups...<br>
-                <a href="https://example.com">View Source</a>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Draft reply
-            st.subheader("📝 Draft Reply")
-            st.text_area(
-                "Generated response:",
-                value="Dear [Investor Name],\n\nThank you for your interest in our Series A round...",
-                height=300
-            )
-
-elif scenario == "📄 Document Analysis":
-    st.header("📄 Document Analysis")
-    st.markdown("Upload a PDF contract and verify clauses against industry standards")
-    
-    uploaded_file = st.file_uploader("Upload PDF contract", type=['pdf'])
-    
-    if uploaded_file:
-        question = st.text_input(
-            "What would you like to analyze?",
-            placeholder="Are the payment terms standard for SaaS contracts?"
+    with st.expander("📎 Attach files", expanded=False):
+        uploaded_files = st.file_uploader(
+            "Upload files",
+            type=["pdf", "docx", "txt", "csv", "xlsx", "png", "jpg"],
+            accept_multiple_files=True,
+            key="file_upload",
+            label_visibility="collapsed",
         )
-        
-        if st.button("🔍 Analyze Document", type="primary"):
-            with st.spinner("Extracting and analyzing document..."):
-                # TODO: Call document agent
-                st.success("✅ Analysis complete!")
-                
-                st.subheader("📊 Analysis Results")
-                st.write("Payment Terms: Net-60 ⚠️ (Industry standard: Net-30)")
+    _, btn_col = st.columns([3.5, 1])
+    with btn_col:
+        run_clicked = st.button("Run ➜", key="run_btn", type="primary", use_container_width=True)
 
-elif scenario == "📅 Meeting Preparation":
-    st.header("📅 Meeting Preparation")
-    st.markdown("Generate comprehensive meeting briefings with context and research")
-    
-    company_name = st.text_input("Company name:", placeholder="TechCorp")
-    meeting_context = st.text_area(
-        "Meeting context:",
-        placeholder="Partnership discussion for AI integration",
-        height=100
-    )
-    
-    if st.button("📋 Generate Briefing", type="primary"):
-        if company_name:
-            with st.spinner("Preparing briefing..."):
-                # TODO: Call meeting agent
-                st.success("✅ Briefing ready!")
-                
-                st.subheader("📋 Meeting Briefing")
-                st.markdown("""
-                **Past Interactions:**
-                - Last contact: 2 months ago
-                - Topic: Initial partnership exploration
-                
-                **Recent News:**
-                - TechCorp raised Series B ($50M)
-                - Launched new AI product
-                
-                **Talking Points:**
-                - Reference their new AI product
-                - Discuss synergies with our platform
-                """)
+    if run_clicked and user_input.strip():
+        st.session_state.messages.append({"type": "user", "content": user_input.strip()})
+        st.session_state.pending_task = user_input.strip()
+        st.session_state.suggestion = ""
+        st.rerun()
 
-# Footer
-st.markdown("---")
-st.caption("Built with Streamlit • Powered by Llama 3.3 70B + Linkup")
+st.markdown("""
+<div style="text-align:center;margin-top:-0.25rem;margin-bottom:2rem;">
+  <span style="font-size:0.75rem;color:#9ca3af;">or press Ctrl + Enter to submit</span>
+</div>
+""", unsafe_allow_html=True)
