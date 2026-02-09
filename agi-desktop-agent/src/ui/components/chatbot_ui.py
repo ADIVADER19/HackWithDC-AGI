@@ -105,11 +105,7 @@ def render_chatbot_ui():
                                 st.session_state['stats']['pdf_count'] += 1
                             if used_linkup:
                                 st.session_state['stats']['linkup_count'] += 1
-                            if 'extraction_logs' in result:
-                                st.markdown("---")
-                                st.subheader("Extraction Logs")
-                                for log in result['extraction_logs']:
-                                    st.text(log)
+                            # Extraction logs removed
                             st.session_state['chat_history'].append((user_input, result['result'], result.get('extraction_logs', [])))
                         else:
                             st.warning("Please enter a question to process the uploaded files.")
@@ -134,11 +130,7 @@ def render_chatbot_ui():
                     st.session_state['stats']['pdf_count'] += 1
                 if used_linkup:
                     st.session_state['stats']['linkup_count'] += 1
-                if 'extraction_logs' in result:
-                    st.markdown("---")
-                    st.subheader("Extraction Logs")
-                    for log in result['extraction_logs']:
-                        st.text(log)
+                # Extraction logs removed
                 st.session_state['chat_history'].append((user_input, result['result'], result.get('extraction_logs', [])))
             elif not user_input.strip():
                 st.warning("Please enter a question to process the uploaded file.")
@@ -163,21 +155,12 @@ def render_chatbot_ui():
                 st.session_state['stats']['pdf_count'] += 1
             if used_linkup:
                 st.session_state['stats']['linkup_count'] += 1
-            if 'extraction_logs' in result:
-                st.markdown("---")
-                st.subheader("Extraction Logs")
-                for log in result['extraction_logs']:
-                    st.text(log)
+            # Extraction logs removed
             st.session_state['chat_history'].append((user_input, result['result'], result.get('extraction_logs', [])))
     # Display chat history with extraction logs
     for q, a, logs in st.session_state['chat_history']:
         st.markdown(f"**You:** {q}")
         st.markdown(f"**Agent:** {a}")
-        if logs:
-            st.markdown("<details><summary>Extraction Logs</summary>", unsafe_allow_html=True)
-            for log in logs:
-                st.text(log)
-            st.markdown("</details>", unsafe_allow_html=True)
     # Stats UI
     st.markdown("---")
     st.subheader("Source Stats for This Session")
