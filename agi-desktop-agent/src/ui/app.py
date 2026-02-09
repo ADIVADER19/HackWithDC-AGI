@@ -68,7 +68,8 @@ with st.sidebar:
 st.markdown('<div class="main-header">🤖 AGI Desktop Intelligence Agent</div>', unsafe_allow_html=True)
 
 # Route to appropriate scenario
-if scenario == "🤖 PDF Chatbot":
+# Route to appropriate scenario
+if scenario == "📄 Document Analysis":
     from src.ui.components.chatbot_ui import render_chatbot_ui
     render_chatbot_ui()
 # ...existing code for other scenarios...

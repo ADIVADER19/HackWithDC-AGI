@@ -53,9 +53,10 @@ class DocumentAgent:
         self.linkup_wrapper = linkup_wrapper
         self.logger = logging.getLogger("DocumentAgent")
 
-    def process(self, file_path, question):
+
+    def process(self, file_path_or_paths, question):
         reasoning_steps = []
-        self.logger.info(f"Starting document analysis for: {file_path}")
+        self.logger.info(f"Starting document analysis for: {file_path_or_paths}")
 
         # Step 0: Use LLM to determine if the question is simple/common or complex/rare
         prompt_simple = (
@@ -67,7 +68,6 @@ class DocumentAgent:
         classification = self.groq_client.ask(prompt_simple)
         self.logger.info(f"LLM classified question as: {classification}")
         reasoning_steps.append(f"Classified question as: {classification}")
-
 
         if 'simple' in str(classification).lower():
             # For simple/common questions, ask the LLM directly
@@ -87,68 +87,84 @@ class DocumentAgent:
                 "result": answer
             }
 
-        # For complex/rare questions, check PDF first, then web if not found
-        # Step 1: Extract text from PDF
+        # For complex/rare questions, check PDF(s) first, then web if not found
+        # Step 1: Extract text from PDF(s)
         text = ""
-        try:
-            self.logger.info("Extracting text from PDF using PyPDF2...")
-            with open(file_path, "rb") as f:
-                reader = PyPDF2.PdfReader(f)
-                for page in reader.pages:
-                    page_text = page.extract_text() or ""
-                    self.logger.debug(f"Extracted page text: {page_text[:100]}...")
-                    text += page_text
-            if text.strip():
-                reasoning_steps.append("Extracted text from PDF.")
-                self.logger.info("Successfully extracted text from PDF.")
-            else:
-                raise ValueError("No text extracted with PyPDF2.")
-        except Exception as e:
-            self.logger.warning(f"PyPDF2 extraction failed or empty: {e}. Trying OCR...")
+        extraction_logs = []
+        file_paths = file_path_or_paths if isinstance(file_path_or_paths, list) else [file_path_or_paths]
+        for idx, file_path in enumerate(file_paths):
+            if not file_path:
+                continue
             try:
-                from pdf2image import convert_from_path
-                import pytesseract
-                from PIL import Image
-                self.logger.info("Converting PDF pages to images for OCR...")
-                images = convert_from_path(file_path)
-                ocr_text = ""
-                for i, img in enumerate(images):
-                    page_ocr = pytesseract.image_to_string(img)
-                    self.logger.debug(f"OCR page {i+1} text: {page_ocr[:100]}...")
-                    ocr_text += page_ocr + "\n"
-                if ocr_text.strip():
-                    text = ocr_text
-                    reasoning_steps.append("Extracted text from PDF using OCR.")
-                    self.logger.info("Successfully extracted text from PDF using OCR.")
+                extraction_logs.append(f"[INFO] Extracting text from PDF {idx+1} using PyPDF2...")
+                with open(file_path, "rb") as f:
+                    reader = PyPDF2.PdfReader(f)
+                    for page_num, page in enumerate(reader.pages):
+                        page_text = page.extract_text() or ""
+                        extraction_logs.append(f"[DEBUG] PDF {idx+1} page {page_num+1}: {page_text[:100]}...")
+                        text += page_text
+                if text.strip():
+                    reasoning_steps.append(f"Extracted text from PDF {idx+1}.")
+                    extraction_logs.append(f"[INFO] Successfully extracted text from PDF {idx+1}.")
                 else:
-                    raise ValueError("No text extracted with OCR.")
-            except Exception as ocr_e:
-                self.logger.error(f"Failed to extract text with OCR: {ocr_e}")
-                return {
-                    "reasoning_steps": reasoning_steps + [f"Failed to extract text: {e}; OCR error: {ocr_e}"],
-                    "linkup_sources": [],
-                    "result": "Error during PDF extraction (PyPDF2 and OCR failed)."
-                }
+                    raise ValueError("No text extracted with PyPDF2.")
+            except Exception as e:
+                extraction_logs.append(f"[WARNING] PyPDF2 extraction failed or empty for PDF {idx+1}: {e}. Trying OCR...")
+                try:
+                    from pdf2image import convert_from_path
+                    import pytesseract
+                    from PIL import Image
+                    extraction_logs.append(f"[INFO] Converting PDF {idx+1} pages to images for OCR...")
+                    images = convert_from_path(file_path)
+                    ocr_text = ""
+                    for i, img in enumerate(images):
+                        page_ocr = pytesseract.image_to_string(img)
+                        extraction_logs.append(f"[DEBUG] PDF {idx+1} OCR page {i+1}: {page_ocr[:100]}...")
+                        ocr_text += page_ocr + "\n"
+                    if ocr_text.strip():
+                        text += ocr_text
+                        reasoning_steps.append(f"Extracted text from PDF {idx+1} using OCR.")
+                        extraction_logs.append(f"[INFO] Successfully extracted text from PDF {idx+1} using OCR.")
+                    else:
+                        raise ValueError("No text extracted with OCR.")
+                except Exception as ocr_e:
+                    extraction_logs.append(f"[ERROR] Failed to extract text with OCR for PDF {idx+1}: {ocr_e}")
+                    return {
+                        "reasoning_steps": reasoning_steps + [f"Failed to extract text: {e}; OCR error: {ocr_e}"],
+                        "linkup_sources": [],
+                        "result": "Error during PDF extraction (PyPDF2 and OCR failed).",
+                        "extraction_logs": extraction_logs
+                    }
 
         # Step 2: Use LLM to identify the most relevant passage/section
-        prompt_passage = (
-            f"You are an expert teaching assistant. Given the following document text, extract and summarize ALL detailed lecture concepts, explanations, and key points relevant to the user's question."
+        # Step 2: Summarize PDF data for context using LLM
+        prompt_context = (
+            f"You are an expert teaching assistant. Given the following document text, summarize the entire lecture in detail, including all slide concepts, definitions, formulas, and key points."
             f"\n\nDocument Text:\n{text}\n\n"
-            f"User Question: {question}\n"
-            f"Return a comprehensive, structured summary of all relevant concepts, including definitions, formulas, examples, and explanations. If not found, say 'Not found in document'."
+            f"Return a comprehensive, structured summary for context."
         )
-        self.logger.info("Sending prompt to LLM to identify relevant passage/section in PDF...")
+        extraction_logs.append("[INFO] Sending PDF text to LLM for context summarization...")
+        pdf_context_summary = self.groq_client.ask(prompt_context)
+        extraction_logs.append(f"[INFO] LLM summarized PDF context: {pdf_context_summary[:200]}...")
+
+        prompt_passage = (
+            f"You are an expert teaching assistant. Given the following summarized lecture context and document text, extract and explain ALL detailed lecture concepts, explanations, and key points relevant to the user's question."
+            f"\n\nLecture Context Summary:\n{pdf_context_summary}\n\nDocument Text:\n{text}\n\n"
+            f"User Question: {question}\n"
+            f"Return a comprehensive, structured summary of all relevant concepts, including definitions, formulas, examples, and explanations. If ANY relevant content is found, summarize it. Only say 'Not found in document' if the document is truly unrelated or empty."
+        )
+        extraction_logs.append("[INFO] Sending prompt to LLM to identify relevant passage/section in PDF...")
         passage = self.groq_client.ask(prompt_passage)
-        self.logger.info(f"LLM identified passage/section: {passage}")
+        extraction_logs.append(f"[INFO] LLM identified passage/section: {passage[:200]}...")
         reasoning_steps.append("Identified relevant passage/section using LLM.")
 
-        if 'not found' in str(passage).lower():
-            # If not found in document, fallback to web search
-            self.logger.info("Passage not found in document, searching web instead.")
+        # Improved fallback logic: Only use Linkup if PDF is empty or truly unrelated
+        if (not text.strip()) or (isinstance(passage, str) and passage.strip().lower() in ["not found in document", "not found", "no relevant content found", "document unrelated", "document is empty"]):
+            extraction_logs.append("[INFO] PDF is empty or LLM says document is truly unrelated. Searching web instead.")
             search_query = f"2025 information or standards for: {question.strip()}"
             linkup_results = self.linkup_wrapper.search(search_query)
             sources = linkup_results.get("sources", []) if isinstance(linkup_results, dict) else linkup_results
-            self.logger.info(f"Linkup returned {len(sources) if sources else 0} sources.")
+            extraction_logs.append(f"[INFO] Linkup returned {len(sources) if sources else 0} sources.")
             reasoning_steps.append("Searched for 2025 information or standards using Linkup.")
             standards_text = "\n".join([src.get("snippet", "") for src in sources]) if sources else ""
             prompt_answer = (
@@ -157,22 +173,24 @@ class DocumentAgent:
                 f"2025 Information/Standards:\n{standards_text}\n\n"
                 f"Provide a concise answer."
             )
-            self.logger.info("Sending prompt to LLM to answer using web information only...")
+            extraction_logs.append("[INFO] Sending prompt to LLM to answer using web information only...")
             answer = self.groq_client.ask(prompt_answer)
-            self.logger.info(f"LLM answer: {answer}")
+            extraction_logs.append(f"[INFO] LLM answer: {answer[:200]}...")
             reasoning_steps.append("Answered using web information only.")
-            self.logger.info("Document analysis complete (web fallback).")
+            extraction_logs.append("[INFO] Document analysis complete (web fallback).")
             return {
                 "reasoning_steps": reasoning_steps,
                 "linkup_sources": sources,
-                "result": answer
+                "result": answer,
+                "extraction_logs": extraction_logs
             }
 
         # If found in document, answer directly and skip Linkup
-        self.logger.info("Answer found in user PDF. Returning answer without web search.")
+        extraction_logs.append("[INFO] Answer found in user PDF. Returning answer without web search.")
         reasoning_steps.append("Answered using PDF only. No web or directory search needed.")
         return {
             "reasoning_steps": reasoning_steps,
             "linkup_sources": [],
-            "result": passage
+            "result": passage,
+            "extraction_logs": extraction_logs
         }
