@@ -6,6 +6,7 @@ ReAct pattern: Observe (memory) → Reason (plan) → Act (Linkup search) → Sy
 """
 
 import json
+import re
 from datetime import datetime
 
 
@@ -58,6 +59,13 @@ class MeetingAgent:
         })
 
         context = self.memory.get_company_context(company_name)
+        relationship_summary = self._summarize_relationship_context(
+            company_name=company_name,
+            meeting_context=meeting_context,
+            memory_context=context
+        )
+        if relationship_summary:
+            context['summary'] = relationship_summary
         total = context['total_interactions']
         last = context['last_contact']
 
@@ -116,6 +124,23 @@ class MeetingAgent:
             industry_sources=industry_results
         )
 
+        briefing_data = briefing_result.get('briefing_data', {})
+        recent_news = (briefing_data.get('recent_news') or '').strip().lower()
+        bad_markers = ['unable to fetch', 'unable to parse', 'no recent news', 'check linkup', 'check api']
+        needs_news_fix = not recent_news or any(m in recent_news for m in bad_markers)
+        if needs_news_fix and news_results.get('sources'):
+            briefing_data['recent_news'] = self._summarize_recent_news(
+                company_name=company_name,
+                sources=news_results.get('sources', [])
+            )
+            briefing_result['briefing_data'] = briefing_data
+        elif needs_news_fix:
+            briefing_data['recent_news'] = (
+                f"No company-specific news was found for {company_name}. "
+                f"It is recommended to check recent coverage manually before the meeting."
+            )
+            briefing_result['briefing_data'] = briefing_data
+
         reasoning_steps[-1]['status'] = 'complete'
         reasoning_steps[-1]['detail'] = 'Briefing generated successfully.'
 
@@ -128,6 +153,10 @@ class MeetingAgent:
         })
 
         # ── Build result ─────────────────────────────────────────
+        if relationship_summary:
+            briefing_result.setdefault('briefing_data', {})
+            briefing_result['briefing_data']['past_context'] = relationship_summary
+
         confidence = self._calculate_confidence(context, all_sources, briefing_result)
 
         # ── Source attribution analytics ─────────────────────────
@@ -154,10 +183,17 @@ class MeetingAgent:
     def _search_news(self, company: str) -> dict:
         """Search Linkup for recent company news."""
         try:
-            return self.linkup.search(
-                query=f"{company} recent news announcements 2025 2026",
-                max_results=4
+            result = self.linkup.search(
+                query=f'"{company}" company news announcements 2025 2026',
+                max_results=5
             )
+            # Filter sources that actually mention the company
+            sources = result.get('sources', [])
+            company_lower = company.lower()
+            relevant = [s for s in sources if company_lower in (s.get('title', '') + s.get('snippet', '')).lower()]
+            if relevant:
+                result['sources'] = relevant
+            return result
         except Exception as e:
             print(f"[MeetingAgent] News search error: {e}")
             return {'sources': [], 'error': str(e)}
@@ -165,13 +201,128 @@ class MeetingAgent:
     def _search_industry(self, company: str) -> dict:
         """Search Linkup for company products, funding, strategy."""
         try:
-            return self.linkup.search(
-                query=f"{company} products funding strategy leadership",
-                max_results=4
+            result = self.linkup.search(
+                query=f'"{company}" products funding strategy company profile',
+                max_results=5
             )
+            sources = result.get('sources', [])
+            company_lower = company.lower()
+            relevant = [s for s in sources if company_lower in (s.get('title', '') + s.get('snippet', '')).lower()]
+            if relevant:
+                result['sources'] = relevant
+            return result
         except Exception as e:
             print(f"[MeetingAgent] Industry search error: {e}")
             return {'sources': [], 'error': str(e)}
+
+    def _summarize_relationship_context(
+        self,
+        company_name: str,
+        meeting_context: str,
+        memory_context: dict
+    ) -> str:
+        """Summarize relationship context using Groq."""
+        emails = memory_context.get('emails', [])[:5]
+        conversations = memory_context.get('conversations', [])[:5]
+
+        def _clean_subject(subject: str) -> str:
+            cleaned = re.sub(r'^\s*(re|fw|fwd)\s*:\s*', '', subject, flags=re.IGNORECASE)
+            return re.sub(r'\s+', ' ', cleaned).strip()
+
+        email_lines = []
+        for em in emails:
+            sender = em.get('from') or em.get('sender') or ""
+            subject = _clean_subject(em.get('subject') or em.get('title') or "")
+            body = (em.get('body') or em.get('content') or "").strip()
+            if subject or sender:
+                email_lines.append(f"- {sender} — {subject} — {body[:120]}")
+
+        meeting_lines = []
+        for conv in conversations:
+            topic = _clean_subject(conv.get('topic') or conv.get('subject') or "")
+            notes = (conv.get('notes') or conv.get('summary') or "").strip()
+            if topic:
+                meeting_lines.append(f"- {topic} — {notes[:120]}")
+
+        if not email_lines and not meeting_lines:
+            return ""
+
+        system_prompt = """You are an executive assistant writing a polished relationship summary.
+
+Rules:
+- Write in complete sentences and natural prose. No raw data dumps.
+- No timestamps, no dates in brackets, no email addresses.
+- Remove "Re:", "Fwd:" prefixes from subject lines.
+- No pipe characters (|) or dashes as list markers.
+- Mention key contacts by first and last name naturally in the text.
+- Summarize the nature and status of the relationship in 2-3 sentences.
+- If there are recent meetings, describe them briefly in prose (not a list).
+- Keep the entire summary under 100 words."""
+
+        user_message = f"""Company: {company_name}
+Meeting context: {meeting_context or 'General'}
+
+Recent emails:
+{chr(10).join(email_lines) if email_lines else 'None'}
+
+Recent meetings:
+{chr(10).join(meeting_lines) if meeting_lines else 'None'}
+"""
+
+        try:
+            response = self.groq.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3
+            )
+            content = (response.get('content') or '').strip()
+            return content or memory_context.get('summary', '')
+        except Exception as e:
+            print(f"[MeetingAgent] Relationship summary error: {e}")
+            return memory_context.get('summary', '')
+
+    def _summarize_recent_news(self, company_name: str, sources: list) -> str:
+        """Summarize recent news from Linkup sources."""
+        if not sources:
+            return "No recent news available."
+
+        system_prompt = """You are writing a polished recent news summary for a meeting briefing.
+
+Rules:
+- Write in complete sentences and natural prose.
+- No pipe characters, no dashes as list markers, no raw URLs.
+- Summarize the most relevant developments in 3-5 sentences.
+- Focus on what matters for a business meeting: funding, product launches, partnerships, leadership changes.
+- If the sources are generic industry news, extract what is most relevant to the specific company.
+- Never mention API keys, errors, or technical issues."""
+
+        user_message = f"""Company: {company_name}
+
+Sources:
+{self.linkup.format_sources_for_agent(sources)}
+"""
+
+        try:
+            response = self.groq.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3
+            )
+            content = (response.get('content') or '').strip()
+            if content:
+                return content
+        except Exception as e:
+            print(f"[MeetingAgent] Recent news summary error: {e}")
+
+        # Fallback: prose from titles
+        titles = [src.get('title') or '' for src in sources[:4] if src.get('title')]
+        if titles:
+            return f"Recent coverage includes topics such as {', '.join(titles[:3])}. Review these sources for the latest details before the meeting."
+        return "Recent news could not be summarized. It is recommended to check the latest coverage manually."
 
     # ── Groq synthesis ────────────────────────────────────────────
 
@@ -193,35 +344,43 @@ class MeetingAgent:
             industry_sources.get('sources', [])
         )
 
-        system_prompt = """You are an expert executive assistant AI. Your job is to create 
-comprehensive, actionable meeting preparation briefings.
+        system_prompt = """You are an expert executive assistant who writes polished, 
+professional meeting briefings. Your writing is clear, uses complete sentences,
+and reads like a well-crafted business memo.
 
-You must output a JSON object with these exact keys:
+FORMATTING RULES (strict):
+- Write in complete sentences and short paragraphs.
+- Never use pipe characters (|), dashes as list markers, or raw URLs in prose.
+- Use numbered lists only for talking points.
+- Do not include timestamps, dates in brackets, or email addresses in the text.
+- Do not mention API keys, errors, or technical failures.
+- If data is sparse, still produce a useful briefing using your knowledge.
+
+You must output a JSON object with exactly these keys:
 {
-  "company_overview": "2-3 sentence overview of the company",
-  "past_context": "Summary of past interactions and relationship status",
-  "recent_news": "Key recent developments, funding, product launches",
-  "talking_points": ["point 1", "point 2", "point 3", "point 4"],
-  "risks_and_notes": "Anything to be cautious about or prepare for"
+  "company_overview": "A 2-3 sentence overview of the company, its industry, and what they do. If this is a well-known company, include relevant details. If unknown, describe what can be inferred.",
+  "past_context": "A polished 2-3 sentence narrative about the relationship history. Mention key contacts by name, the nature of past discussions, and where things stand. Do not list raw data.",
+  "recent_news": "A concise paragraph summarizing the most relevant recent developments from the provided sources. Highlight what matters for the upcoming meeting.",
+  "talking_points": ["Specific, actionable point referencing real context", "Another concrete point", "A third point tied to meeting goals", "A fourth strategic point"],
+  "risks_and_notes": "1-2 sentences about potential risks, gaps in knowledge, or things to prepare for."
 }
 
-Be specific, actionable, and concise. Reference real data from the sources provided.
-Output ONLY valid JSON, no markdown or extra text."""
+Output ONLY valid JSON, no markdown fences, no extra text."""
 
-        user_message = f"""Prepare a meeting briefing for a meeting with **{company_name}**.
+        user_message = f"""Prepare a polished meeting briefing for an upcoming meeting with {company_name}.
 
 Meeting context: {meeting_context or 'General business meeting'}
 
-=== PAST INTERACTIONS (from our records) ===
+RELATIONSHIP HISTORY:
 {memory_context['summary']}
 
-=== RECENT NEWS (from web research) ===
-{news_text if news_text.strip() else 'No recent news found.'}
+RECENT NEWS AND DEVELOPMENTS:
+{news_text if news_text.strip() else 'No news sources available. Use your general knowledge if you know this company.'}
 
-=== INDUSTRY & PRODUCT INFO (from web research) ===
-{industry_text if industry_text.strip() else 'No industry info found.'}
+INDUSTRY AND PRODUCT INFORMATION:
+{industry_text if industry_text.strip() else 'No additional industry data. Use your general knowledge if applicable.'}
 
-Generate the briefing JSON now."""
+Generate the briefing JSON now. Remember: polished prose, no raw data dumps, no pipes or dashes as separators."""
 
         try:
             response = self.groq.chat(
@@ -229,7 +388,7 @@ Generate the briefing JSON now."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                temperature=0.4  # Lower temp for factual output
+                temperature=0.4
             )
 
             content = response.get('content', '')
@@ -239,7 +398,25 @@ Generate the briefing JSON now."""
             # Parse the JSON from LLM response
             briefing_data = self._parse_briefing_json(content)
 
-            # Build the human-readable text version
+            # If critical fields are empty, fill them intelligently
+            if not briefing_data.get('company_overview'):
+                briefing_data['company_overview'] = (
+                    f"{company_name} is the subject of an upcoming meeting. "
+                    f"Based on available records, the company has been involved in discussions "
+                    f"related to collaboration and partnership opportunities."
+                )
+            if not briefing_data.get('talking_points'):
+                briefing_data['talking_points'] = [
+                    f"Open by referencing your recent interactions with {company_name}",
+                    "Discuss current priorities and how they align with mutual goals",
+                    "Explore specific collaboration opportunities mentioned in past communications",
+                    "Agree on clear next steps and a follow-up schedule"
+                ]
+            if not briefing_data.get('risks_and_notes'):
+                briefing_data['risks_and_notes'] = (
+                    "Some details may need verification. Review any shared documents before the meeting."
+                )
+
             briefing_text = self._format_briefing_text(company_name, briefing_data)
 
             return {
@@ -252,33 +429,71 @@ Generate the briefing JSON now."""
             return self._fallback_briefing(company_name, memory_context)
 
     def _parse_briefing_json(self, content: str) -> dict:
-        """Extract JSON from LLM response, handling markdown code fences."""
-        # Strip markdown code fences if present
+        """Extract JSON from LLM response, handling markdown code fences and broken JSON."""
         cleaned = content.strip()
+
+        # Strip markdown code fences
         if cleaned.startswith('```'):
             lines = cleaned.split('\n')
-            # Remove first and last lines (fences)
             lines = [l for l in lines if not l.strip().startswith('```')]
             cleaned = '\n'.join(lines)
 
+        # First attempt: direct parse
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            # Try to find JSON object in the text
-            start = cleaned.find('{')
-            end = cleaned.rfind('}')
-            if start != -1 and end != -1:
-                try:
-                    return json.loads(cleaned[start:end + 1])
-                except json.JSONDecodeError:
-                    pass
-            return {
-                'company_overview': 'Unable to parse briefing.',
-                'past_context': content[:200],
-                'recent_news': '',
-                'talking_points': ['Review the raw response above'],
-                'risks_and_notes': ''
-            }
+            pass
+
+        # Second attempt: find the outermost { ... }
+        start = cleaned.find('{')
+        end = cleaned.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+
+        # Third attempt: fix common issues (trailing commas, unescaped newlines)
+        if start != -1 and end != -1:
+            raw_json = cleaned[start:end + 1]
+            # Remove trailing commas before } or ]
+            fixed = re.sub(r',\s*([}\]])', r'\1', raw_json)
+            # Escape unescaped newlines in string values
+            fixed = fixed.replace('\n', '\\n')
+            try:
+                return json.loads(fixed)
+            except json.JSONDecodeError:
+                pass
+
+        # Fourth attempt: ask Groq to fix the JSON
+        try:
+            fix_response = self.groq.chat(
+                messages=[
+                    {"role": "system", "content": "Fix this broken JSON. Output ONLY the corrected JSON object, nothing else."},
+                    {"role": "user", "content": content[:2000]}
+                ],
+                temperature=0.0
+            )
+            fix_content = (fix_response.get('content') or '').strip()
+            if fix_content.startswith('```'):
+                fix_lines = fix_content.split('\n')
+                fix_content = '\n'.join(l for l in fix_lines if not l.strip().startswith('```'))
+            fix_start = fix_content.find('{')
+            fix_end = fix_content.rfind('}')
+            if fix_start != -1 and fix_end != -1:
+                return json.loads(fix_content[fix_start:fix_end + 1])
+        except Exception:
+            pass
+
+        # Final fallback: return empty structure (will be filled by the caller)
+        print(f"[MeetingAgent] Could not parse briefing JSON. Raw content: {content[:300]}")
+        return {
+            'company_overview': '',
+            'past_context': '',
+            'recent_news': '',
+            'talking_points': [],
+            'risks_and_notes': ''
+        }
 
     def _format_briefing_text(self, company: str, data: dict) -> str:
         """Format briefing data into readable text."""
@@ -311,17 +526,23 @@ Generate the briefing JSON now."""
 
     def _fallback_briefing(self, company: str, memory_context: dict) -> dict:
         """Generate a basic briefing when Groq is unavailable."""
+        total = memory_context.get('total_interactions', 0)
+        last = memory_context.get('last_contact')
+        past_note = f'We have {total} past interaction(s) on record.' if total else 'No prior interactions found.'
+        if last:
+            past_note += f' The most recent contact was on {last}.'
+
         data = {
-            'company_overview': f'Meeting scheduled with {company}.',
-            'past_context': memory_context.get('summary', 'No past data.'),
-            'recent_news': 'Unable to fetch — check Linkup API key.',
+            'company_overview': f'An upcoming meeting is scheduled with {company}. Further company details should be verified before the meeting.',
+            'past_context': past_note,
+            'recent_news': 'Recent news could not be retrieved at this time. It is recommended to check the latest coverage manually before the meeting.',
             'talking_points': [
-                'Review past interaction history',
-                'Ask about their current priorities',
-                'Explore mutual opportunities',
-                'Discuss timeline and next steps'
+                f'Open by referencing your most recent interaction with {company} to establish continuity',
+                'Ask about their current priorities and any changes since your last conversation',
+                'Explore areas of mutual interest and potential collaboration',
+                'Align on clear next steps and a follow-up timeline before closing'
             ],
-            'risks_and_notes': 'Briefing generated with limited data. Verify details manually.'
+            'risks_and_notes': 'This briefing was generated with limited data. Verify key details and review any available documents before the meeting.'
         }
         return {
             'briefing_text': self._format_briefing_text(company, data),

@@ -4,6 +4,7 @@ Maps Gmail message format to local cache.json schema.
 """
 
 import os
+import re
 import base64
 from datetime import datetime
 from email.mime.text import MIMEText
@@ -216,8 +217,17 @@ class GmailClient:
         Returns:
             List of standardized email dicts
         """
-        # Build query: search company name in all fields
-        query = f'from:{company.lower()} OR to:{company.lower()} OR subject:{company.lower()}'
+        term = (company or "").strip()
+        if not term:
+            return []
+
+        term_no_space = re.sub(r'\s+', '', term)
+        query_terms = [f'"{term}"', term]
+        if term_no_space and term_no_space.lower() != term.lower():
+            query_terms.append(term_no_space)
+
+        or_block = " OR ".join(query_terms)
+        query = f'({or_block}) OR from:{term} OR to:{term} OR subject:{term}'
         return self.fetch_emails(query, max_results)
 
     def fetch_unread_emails(self, max_results: int = 10) -> List[Dict]:

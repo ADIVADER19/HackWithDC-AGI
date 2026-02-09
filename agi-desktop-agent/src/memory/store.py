@@ -10,7 +10,8 @@ Schema-tolerant: searches across all string fields for keyword matching.
 
 import json
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -72,6 +73,138 @@ class MemoryStore:
                 return True
         return False
 
+    def _parse_datetime(self, record: dict) -> Optional[datetime]:
+        """Parse common date formats from record fields."""
+        raw = record.get('date') or record.get('timestamp')
+        if not raw:
+            return None
+        if isinstance(raw, (int, float)):
+            try:
+                return datetime.fromtimestamp(raw / 1000 if raw > 10**11 else raw)
+            except (OSError, ValueError):
+                return None
+        raw = str(raw).strip()
+        if raw.isdigit():
+            try:
+                val = int(raw)
+                return datetime.fromtimestamp(val / 1000 if len(raw) >= 12 else val)
+            except (OSError, ValueError):
+                return None
+        try:
+            return datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+
+    def _normalize_subject(self, subject: str) -> str:
+        """Normalize subject for deduping threads."""
+        if not subject:
+            return ""
+        cleaned = subject.lower()
+        cleaned = re.sub(r'^\s*(re|fw|fwd)\s*:\s*', '', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned
+
+    def _extract_email_domain(self, text: str) -> str:
+        """Extract domain from an email-like string."""
+        if not text:
+            return ""
+        match = re.search(r'[\w\.-]+@([\w\.-]+\.\w+)', text)
+        return match.group(1).lower() if match else ""
+
+    def _recent_score(self, dt: Optional[datetime]) -> int:
+        """Recency weighting for relevance scoring."""
+        if not dt:
+            return 0
+        age = datetime.now(dt.tzinfo) - dt
+        if age <= timedelta(days=30):
+            return 2
+        if age <= timedelta(days=90):
+            return 1
+        return 0
+
+    def _score_email(self, company: str, email: dict) -> int:
+        """Heuristic relevance score for emails."""
+        company_lower = company.lower()
+        subject = (email.get('subject') or email.get('title') or "").lower()
+        body = (email.get('body') or email.get('content') or "").lower()
+        from_field = (email.get('from') or email.get('sender') or "").lower()
+        to_field = (email.get('to') or "").lower()
+
+        score = 0
+        if company_lower in subject:
+            score += 3
+        if company_lower in body:
+            score += 2
+        if company_lower in from_field or company_lower in to_field:
+            score += 2
+
+        domain = self._extract_email_domain(from_field)
+        if company_lower and domain and company_lower in domain:
+            score += 3
+
+        if any(bad in from_field for bad in ['noreply', 'no-reply']):
+            score -= 2
+        if domain in {'slack.com', 'github.com', 'notifications.google.com'} and company_lower not in subject:
+            score -= 2
+
+        score += self._recent_score(self._parse_datetime(email))
+        return score
+
+    def _score_conversation(self, company: str, conv: dict) -> int:
+        """Heuristic relevance score for meetings/conversations."""
+        company_lower = company.lower()
+        topic = (conv.get('topic') or conv.get('subject') or "").lower()
+        notes = (conv.get('notes') or conv.get('summary') or "").lower()
+        attendees = " ".join(conv.get('attendees', [])).lower() if isinstance(conv.get('attendees'), list) else ""
+        company_field = (conv.get('company') or "").lower()
+
+        score = 0
+        if company_lower in topic:
+            score += 3
+        if company_lower in notes:
+            score += 2
+        if company_lower in attendees:
+            score += 2
+        if company_lower and company_lower in company_field:
+            score += 3
+
+        score += self._recent_score(self._parse_datetime(conv))
+        return score
+
+    def _sort_by_date(self, records: list) -> list:
+        return sorted(
+            records,
+            key=lambda r: self._parse_datetime(r) or datetime.min,
+            reverse=True
+        )
+
+    def _filter_emails(self, company: str, emails: list) -> list:
+        scored = [(self._score_email(company, e), e) for e in emails]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        filtered = [e for s, e in scored if s >= 2]
+        if not filtered and scored:
+            filtered = [e for _, e in scored[:3]]
+        return self._sort_by_date(filtered)
+
+    def _dedupe_emails(self, emails: list) -> list:
+        """Collapse duplicate threads by normalized subject."""
+        seen = {}
+        for em in self._sort_by_date(emails):
+            key = self._normalize_subject(em.get('subject') or em.get('title') or "")
+            if not key:
+                key = em.get('id') or str(id(em))
+            if key not in seen:
+                seen[key] = em
+        return list(seen.values())
+
+    def _filter_conversations(self, company: str, conversations: list) -> list:
+        scored = [(self._score_conversation(company, c), c) for c in conversations]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        filtered = [c for s, c in scored if s >= 2]
+        if not filtered and scored:
+            filtered = [c for _, c in scored[:3]]
+        return self._sort_by_date(filtered)
+
     # ── Public API ────────────────────────────────────────────────
 
     def search_emails(self, company: str) -> list:
@@ -96,6 +229,8 @@ class MemoryStore:
                 emails = self.gmail_client.search_emails_by_company(company, max_results=15)
                 if emails:
                     print(f"[MemoryStore] Found {len(emails)} emails from Gmail for {company}")
+                    emails = self._filter_emails(company, emails)
+                    emails = self._dedupe_emails(emails)
                     return emails
             except Exception as e:
                 print(f"[MemoryStore] Gmail fetch failed: {e}. Falling back to cache.")
@@ -103,12 +238,8 @@ class MemoryStore:
         # Fall back to local cache
         cached_emails = self._load_json(self.emails_path)
         matches = [e for e in cached_emails if self._matches(e, company)]
-        
-        # Sort by date if available (tolerant of missing field)
-        matches.sort(
-            key=lambda e: e.get('date', e.get('timestamp', '0')),
-            reverse=True
-        )
+        matches = self._filter_emails(company, matches)
+        matches = self._dedupe_emails(matches)
         return matches
 
     def search_conversations(self, company: str) -> list:
@@ -137,10 +268,7 @@ class MemoryStore:
                 
                 if conversations:
                     print(f"[MemoryStore] Found {len(conversations)} meetings from Calendar for {company}")
-                    conversations.sort(
-                        key=lambda c: c.get('date', c.get('timestamp', '0')),
-                        reverse=True
-                    )
+                    conversations = self._filter_conversations(company, conversations)
                     return conversations
             except Exception as e:
                 print(f"[MemoryStore] Calendar fetch failed: {e}. Falling back to cache.")
@@ -148,11 +276,66 @@ class MemoryStore:
         # Fall back to local cache
         cached_conversations = self._load_json(self.conversations_path)
         matches = [c for c in cached_conversations if self._matches(c, company)]
-        matches.sort(
-            key=lambda c: c.get('date', c.get('timestamp', '0')),
-            reverse=True
-        )
+        matches = self._filter_conversations(company, matches)
         return matches
+
+    def _summarize_context(self, company: str, emails: list, conversations: list) -> str:
+        """Build a concise, relevance-weighted summary for the LLM."""
+        summary_parts = []
+
+        # Extract key contacts (clean names only, no emails)
+        if emails:
+            names = []
+            for em in emails:
+                sender = em.get('from') or em.get('sender') or ""
+                if sender and all(bad not in sender.lower() for bad in ['noreply', 'no-reply', 'notifications']):
+                    # Try to extract just the name portion
+                    name = re.sub(r'<[^>]+>', '', sender).strip().strip('"\'')
+                    if name and '@' not in name:
+                        names.append(name)
+                    elif '@' in sender:
+                        names.append(sender.split('<')[0].strip().strip('"\'') or sender)
+            key_contacts = list(dict.fromkeys(names))[:3]
+            if key_contacts:
+                summary_parts.append(f"Key contacts: {', '.join(key_contacts)}")
+
+        # Email thread subjects (cleaned)
+        if emails:
+            subjects = []
+            for em in emails[:3]:
+                subj = em.get('subject') or em.get('title') or ""
+                subj = re.sub(r'^\s*(re|fw|fwd)\s*:\s*', '', subj, flags=re.IGNORECASE).strip()
+                if subj and subj not in subjects:
+                    subjects.append(subj)
+            sender_name = key_contacts[0] if key_contacts else "the contact"
+            if subjects:
+                summary_parts.append(
+                    f"Recent email threads with {sender_name} cover: {', '.join(subjects)}."
+                )
+                # Include body preview for context
+                for em in emails[:2]:
+                    body = (em.get('body') or em.get('content') or '').strip()[:200]
+                    if body:
+                        summary_parts.append(f"Email excerpt: {body}")
+        else:
+            summary_parts.append("No relevant emails found for this company.")
+
+        # Meeting topics (cleaned)
+        if conversations:
+            topics = []
+            for conv in conversations[:3]:
+                topic = conv.get('topic') or conv.get('subject') or ""
+                topic = re.sub(r'^\s*(re|fw|fwd)\s*:\s*', '', topic, flags=re.IGNORECASE).strip()
+                if topic and topic not in topics:
+                    topics.append(topic)
+            if topics:
+                summary_parts.append(
+                    f"Recent meetings include: {', '.join(topics)}."
+                )
+        else:
+            summary_parts.append("No relevant meetings found for this company.")
+
+        return "\n".join(summary_parts)
 
     def get_company_context(self, company: str) -> dict:
         """
@@ -181,34 +364,7 @@ class MemoryStore:
         all_dates.sort(reverse=True)
         last_contact = all_dates[0] if all_dates else None
 
-        # Build a text summary the LLM can consume
-        summary_parts = []
-        if emails:
-            summary_parts.append(f"Found {len(emails)} past email(s):")
-            for em in emails[:5]:  # Limit to 5 most recent
-                subj = em.get('subject', em.get('title', 'No subject'))
-                date = em.get('date', 'unknown date')
-                sender = em.get('from', em.get('sender', 'unknown'))
-                body_preview = (em.get('body', em.get('content', '')))[:150]
-                summary_parts.append(
-                    f"  - [{date}] From: {sender} | Subject: {subj}\n"
-                    f"    Preview: {body_preview}"
-                )
-        else:
-            summary_parts.append("No past emails found for this company.")
-
-        if conversations:
-            summary_parts.append(f"\nFound {len(conversations)} past meeting(s)/conversation(s):")
-            for conv in conversations[:5]:
-                topic = conv.get('topic', conv.get('subject', 'No topic'))
-                date = conv.get('date', 'unknown date')
-                notes = (conv.get('notes', conv.get('summary', '')))[:150]
-                summary_parts.append(
-                    f"  - [{date}] Topic: {topic}\n"
-                    f"    Notes: {notes}"
-                )
-        else:
-            summary_parts.append("\nNo past meetings/conversations found for this company.")
+        summary = self._summarize_context(company, emails, conversations)
 
         return {
             'company': company,
@@ -216,7 +372,7 @@ class MemoryStore:
             'conversations': conversations,
             'total_interactions': len(emails) + len(conversations),
             'last_contact': last_contact,
-            'summary': '\n'.join(summary_parts)
+            'summary': summary
         }
 
     def save_meeting_interaction(self, company: str, topic: str, notes: str, briefing: str = ""):

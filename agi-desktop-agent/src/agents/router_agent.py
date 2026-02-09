@@ -8,6 +8,7 @@ Uses Groq (Llama 3.3 70B) to determine:
 """
 
 import json
+import re
 
 
 class RouterAgent:
@@ -94,6 +95,17 @@ For document: extract the analysis question.
             if 'params' not in result:
                 result['params'] = {}
 
+            # Heuristic fallback if company_name missing for meeting
+            if 'meeting' in result.get('scenarios', []):
+                meeting_params = result['params'].get('meeting', {})
+                company_name = (meeting_params.get('company_name') or '').strip()
+                if not company_name:
+                    extracted = self._extract_company_name(user_prompt)
+                    if extracted:
+                        meeting_params['company_name'] = extracted
+                        meeting_params.setdefault('meeting_context', user_prompt)
+                        result['params']['meeting'] = meeting_params
+
             return result
 
         except Exception as e:
@@ -130,9 +142,54 @@ For document: extract the analysis question.
     def _fallback_params(self, scenario: str, prompt: str) -> dict:
         """Generate minimal params when Groq parsing fails."""
         if scenario == 'meeting':
-            return {'meeting': {'company_name': '', 'meeting_context': prompt}}
+            return {
+                'meeting': {
+                    'company_name': self._extract_company_name(prompt),
+                    'meeting_context': prompt
+                }
+            }
         elif scenario == 'email':
             return {'email': {'email_content': prompt, 'company_name': ''}}
         elif scenario == 'document':
             return {'document': {'question': prompt, 'file_hint': ''}}
         return {}
+
+    def _extract_company_name(self, prompt: str) -> str:
+        """Best-effort entity extraction for company name."""
+        text = (prompt or "").strip()
+        if not text:
+            return ""
+
+        patterns = [
+            r'\bmeeting with\s+([^.,;:\n]+)',
+            r'\bmeet with\s+([^.,;:\n]+)',
+            r'\bwith\s+([^.,;:\n]+)',
+            r'\bfor\s+([^.,;:\n]+)',
+        ]
+        stop_words = {
+            'tomorrow', 'today', 'at', 'about', 'regarding', 'on', 'to', 'and',
+            'use', 'prepare', 'briefing', 'talking', 'points', 'next', 'steps',
+            'context', 'with', 'from'
+        }
+
+        for pat in patterns:
+            match = re.search(pat, text, flags=re.IGNORECASE)
+            if match:
+                chunk = match.group(1).strip().strip('"\'')
+                tokens = chunk.split()
+                filtered = []
+                for token in tokens:
+                    if token.lower() in stop_words:
+                        break
+                    filtered.append(token)
+                candidate = " ".join(filtered) if filtered else chunk
+                candidate = candidate.strip().strip('"\'')
+                if candidate:
+                    return " ".join(candidate.split()[:4])
+
+        # Fallback: CamelCase or ALLCAPS token
+        camel = re.search(r'\b[A-Z][a-z]+[A-Z][A-Za-z]*\b', text)
+        if camel:
+            return camel.group(0)
+        caps = re.findall(r'\b[A-Z]{2,}\b', text)
+        return caps[0] if caps else ""
