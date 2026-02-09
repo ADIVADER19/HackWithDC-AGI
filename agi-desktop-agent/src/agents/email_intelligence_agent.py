@@ -34,6 +34,8 @@ class EmailIntelligenceAgent:
             "entities_known": 0,
             "linkup_sources": 0,
         }
+        self.timings = {}
+        self.api_calls = {}
 
     def add_reasoning(self, step: str, level: str = "info"):
         """
@@ -404,6 +406,86 @@ Shortened version (100-150 words only):"""
 
         return improved.strip()
 
+    def _is_generic_term(self, entity_name: str, entity_type: str) -> bool:
+        """Check if entity is too generic to research"""
+        generic_terms = [
+            "real-time data processing",
+            "machine learning",
+            "artificial intelligence",
+            "cloud computing",
+            "data analytics",
+            "big data",
+            "deep learning",
+            "natural language processing",
+            "computer vision",
+            "iot",
+            "blockchain",
+            "web3",
+            "ai/ml",
+            "quantum computing",
+            "edge computing",
+        ]
+
+        entity_lower = entity_name.lower()
+
+        # Check if it's a generic term
+        if entity_lower in generic_terms:
+            return True
+
+        # Check if entity_type suggests generic concept
+        if entity_type in ["product/service", "technology", "concept"]:
+            for generic in generic_terms:
+                if generic in entity_lower:
+                    return True
+
+        return False
+
+    def _analyze_draft_composition(
+        self, draft: str, email: str, research: Dict
+    ) -> Dict:
+        """Analyze what information sources were used in draft"""
+
+        word_count = len(draft.split())
+        sentences = len([s for s in draft.split(".") if s.strip()])
+        paragraphs = len([p for p in draft.split("\n\n") if p.strip()])
+
+        # Count entity mentions in draft
+        entities_mentioned = []
+        for entity_name in research.keys():
+            if entity_name.lower() in draft.lower():
+                entities_mentioned.append(entity_name)
+
+        # Count research references (indicators that research was used)
+        research_indicators = [
+            "saw",
+            "noticed",
+            "familiar with",
+            "impressed",
+            "aware",
+            "congratulations",
+            "exciting",
+            "portfolio",
+            "focused on",
+            "know about",
+        ]
+        research_refs = sum(
+            1 for indicator in research_indicators if indicator in draft.lower()
+        )
+
+        return {
+            "word_count": word_count,
+            "sentences": sentences,
+            "paragraphs": paragraphs,
+            "entities_mentioned": entities_mentioned,
+            "entities_mentioned_count": len(entities_mentioned),
+            "research_references": research_refs,
+            "quality_indicators": {
+                "concise": word_count <= 200,
+                "well_structured": 3 <= paragraphs <= 4,
+                "uses_research": research_refs > 0,
+            },
+        }
+
     def draft_reply(self, email_content: str, research_data: Dict[str, Any]) -> str:
         """
         Draft an informed reply using research findings or existing knowledge
@@ -510,55 +592,182 @@ Now draft the reply (MAXIMUM 150 words):
     ) -> Dict[str, Any]:
         """
         Main workflow: Analyze email, research entities, draft reply
+        Enhanced with comprehensive stats tracking
 
         Args:
             email_content: Full email text
             email_metadata: Optional metadata (subject, from, date, etc.)
 
         Returns:
-            Complete analysis results for UI display
+            Complete analysis results for UI display with detailed stats
         """
         start_time = time.time()
         self.reasoning_steps = []  # Reset reasoning log
-        self.stats = {  # Reset stats for this analysis
-            "total_entities": 0,
-            "entities_searched": 0,
-            "entities_known": 0,
-            "linkup_sources": 0,
+        self.timings = {}
+        self.api_calls = {
+            "groq_entity_extraction": 0,
+            "groq_knowledge_assessment": 0,
+            "groq_draft_generation": 0,
+            "linkup_searches": 0,
         }
 
         self.add_reasoning("🚀 Starting email intelligence analysis...")
 
-        # Step 1: Extract entities
+        # STEP 1: Extract entities
+        extraction_start = time.time()
         entities = self.extract_entities(email_content)
+        self.timings["entity_extraction"] = round(time.time() - extraction_start, 2)
+        self.api_calls["groq_entity_extraction"] = 1
 
-        # Step 2: Research entities with smart Linkup usage
+        # STEP 2: Research entities with enhanced tracking
+        assessment_start = time.time()
         research_data = {}
+        entity_decisions = {
+            "skipped_generic": [],
+            "used_knowledge": [],
+            "searched_unknown": [],
+            "searched_recent": [],
+        }
+        information_sources = {}
+
         if entities:
-            research_data = self.research_all_entities(entities, email_content)
+            for entity in entities:
+                entity_name = entity.get("name", "")
+                entity_type = entity.get("type", "")
 
-        # Step 3: Draft reply
+                # Check if generic (should skip)
+                if self._is_generic_term(entity_name, entity_type):
+                    entity_decisions["skipped_generic"].append(entity_name)
+                    self.add_reasoning(
+                        f"⏭️ Skipping generic term: {entity_name}", "info"
+                    )
+                    continue
+
+                # Assess knowledge
+                assessment = self.assess_knowledge(entity, email_content)
+                self.api_calls["groq_knowledge_assessment"] += 1
+
+                # Track decision and research
+                if not assessment.get("needs_search", True):
+                    # Use existing knowledge
+                    entity_decisions["used_knowledge"].append(entity_name)
+                    information_sources[entity_name] = {
+                        "source_type": "local_knowledge",
+                        "confidence": assessment.get("confidence", 0.8),
+                        "known_info": assessment.get("known_info", ""),
+                        "assessment_reasoning": assessment.get("reasoning", ""),
+                    }
+                    research_data[entity_name] = {
+                        "entity": entity_name,
+                        "type": entity_type,
+                        "context": entity.get("context", ""),
+                        "used_existing_knowledge": True,
+                        "known_info": assessment.get("known_info", ""),
+                        "reasoning": assessment.get("reasoning", ""),
+                        "sources": [],
+                    }
+                else:
+                    # Determine search reason
+                    reasoning_lower = assessment.get("reasoning", "").lower()
+                    if "unknown" in reasoning_lower or "not" in reasoning_lower:
+                        entity_decisions["searched_unknown"].append(entity_name)
+                    else:
+                        entity_decisions["searched_recent"].append(entity_name)
+
+                    # Search Linkup
+                    search_query = assessment.get(
+                        "search_query", f"{entity_name} recent news"
+                    )
+                    try:
+                        search_results = self.linkup.search(search_query, max_results=5)
+                        self.api_calls["linkup_searches"] += 1
+
+                        sources = search_results.get("sources", [])
+                        information_sources[entity_name] = {
+                            "source_type": "linkup",
+                            "confidence": 0.75,
+                            "sources_count": len(sources),
+                            "query_used": search_query,
+                            "assessment_reasoning": assessment.get("reasoning", ""),
+                        }
+                        research_data[entity_name] = {
+                            "entity": entity_name,
+                            "type": entity_type,
+                            "context": entity.get("context", ""),
+                            "sources": sources,
+                            "query_used": search_query,
+                            "used_existing_knowledge": False,
+                        }
+                    except Exception as e:
+                        research_data[entity_name] = {
+                            "entity": entity_name,
+                            "type": entity_type,
+                            "sources": [],
+                            "error": str(e),
+                        }
+
+                time.sleep(0.5)  # Rate limiting
+
+        self.timings["knowledge_assessment_and_research"] = round(
+            time.time() - assessment_start, 2
+        )
+
+        # STEP 3: Draft reply
+        draft_start = time.time()
         draft_reply = self.draft_reply(email_content, research_data)
+        self.timings["draft_generation"] = round(time.time() - draft_start, 2)
+        self.api_calls["groq_draft_generation"] = 1
 
-        # Collect all sources for display
+        # Analyze draft composition
+        draft_analysis = self._analyze_draft_composition(
+            draft_reply, email_content, research_data
+        )
+
+        # Collect all sources
         all_sources = []
         for entity_research in research_data.values():
             all_sources.extend(entity_research.get("sources", []))
 
+        # Calculate efficiency metrics
+        entities_with_knowledge = len(entity_decisions["used_knowledge"])
+        entities_searched = len(entity_decisions["searched_unknown"]) + len(
+            entity_decisions["searched_recent"]
+        )
+        entities_skipped = len(entity_decisions["skipped_generic"])
+        total_entities_processed = entities_with_knowledge + entities_searched
+
+        # Calculate cost savings
+        potential_searches = total_entities_processed + entities_skipped
+        actual_searches = entities_searched
+        searches_avoided = potential_searches - actual_searches
+
+        groq_cost = (
+            self.api_calls["groq_entity_extraction"] * 0.0005
+            + self.api_calls["groq_knowledge_assessment"] * 0.0003
+            + self.api_calls["groq_draft_generation"] * 0.0005
+        )
+        linkup_cost = self.api_calls["linkup_searches"] * 0.01
+        total_cost = groq_cost + linkup_cost
+        cost_saved = searches_avoided * 0.01
+        time_saved = searches_avoided * 2.5
+
         execution_time = round(time.time() - start_time, 2)
+
+        # Add summary to reasoning
+        self.add_reasoning(
+            f"📊 Processed {len(entities)} entities: "
+            f"{entities_skipped} skipped (generic), "
+            f"{entities_with_knowledge} used knowledge, "
+            f"{entities_searched} searched",
+            "info",
+        )
         self.add_reasoning(f"✅ Analysis complete in {execution_time}s", "success")
 
-        # Calculate efficiency metrics
-        efficiency_pct = 0
-        if self.stats["total_entities"] > 0:
-            efficiency_pct = round(
-                (self.stats["entities_known"] / self.stats["total_entities"]) * 100, 1
-            )
-
-        self.add_reasoning(
-            f"📊 Linkup Efficiency: {self.stats['entities_known']}/{self.stats['total_entities']} entities "
-            f"({efficiency_pct}%) used existing knowledge, avoided {efficiency_pct}% of API calls",
-            "info",
+        # Calculate efficiency rate
+        efficiency_rate = (
+            round(100 * searches_avoided / potential_searches, 1)
+            if potential_searches > 0
+            else 0
         )
 
         return {
@@ -570,11 +779,36 @@ Now draft the reply (MAXIMUM 150 words):
             "execution_time": execution_time,
             "metadata": email_metadata or {},
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            # ENHANCED STATS
             "stats": {
-                "total_entities": self.stats["total_entities"],
-                "entities_searched": self.stats["entities_searched"],
-                "entities_known": self.stats["entities_known"],
-                "linkup_sources": self.stats["linkup_sources"],
-                "efficiency_pct": efficiency_pct,
+                # Basic counts
+                "total_entities_detected": len(entities),
+                "total_entities_processed": total_entities_processed,
+                "entities_skipped_generic": entities_skipped,
+                "entities_used_knowledge": entities_with_knowledge,
+                "entities_searched": entities_searched,
+                "linkup_sources_found": len(all_sources),
+                # Decision breakdown
+                "entity_decisions": entity_decisions,
+                # Efficiency metrics
+                "efficiency": {
+                    "potential_searches": potential_searches,
+                    "actual_searches": actual_searches,
+                    "searches_avoided": searches_avoided,
+                    "efficiency_rate": efficiency_rate,
+                    "time_saved_seconds": round(time_saved, 1),
+                    "cost_saved_usd": round(cost_saved, 4),
+                },
+                # Source attribution
+                "information_sources": information_sources,
+                # Performance metrics
+                "performance": {
+                    "timings": self.timings,
+                    "api_calls": self.api_calls,
+                    "total_api_calls": sum(self.api_calls.values()),
+                    "estimated_cost_usd": round(total_cost, 4),
+                },
+                # Draft analysis
+                "draft_analysis": draft_analysis,
             },
         }

@@ -382,58 +382,217 @@ def main():
         with tab5:
             st.subheader("📊 Detailed Statistics & Content Source Analysis")
 
+            # Enhanced Stats Display
+            stats = result.get("stats", {})
+
+            # KEY METRICS ROW
+            st.markdown("### 🎯 Key Metrics")
+            key_col1, key_col2, key_col3, key_col4 = st.columns(4)
+
+            with key_col1:
+                efficiency = stats.get("efficiency", {})
+                eff_rate = efficiency.get("efficiency_rate", 0)
+                st.metric(
+                    "💡 Efficiency Rate",
+                    f"{eff_rate:.1f}%",
+                    f"Avoided {efficiency.get('searches_avoided', 0)} searches",
+                )
+            with key_col2:
+                st.metric(
+                    "🧠 Local Knowledge",
+                    stats.get("entities_used_knowledge", 0),
+                    f"vs {stats.get('entities_searched', 0)} searched",
+                )
+            with key_col3:
+                st.metric(
+                    "⏱️ Time Saved",
+                    f"{stats.get('efficiency', {}).get('time_saved_seconds', 0):.1f}s",
+                    "from smart decisions",
+                )
+            with key_col4:
+                perf = stats.get("performance", {})
+                cost = perf.get("estimated_cost_usd", 0)
+                saved = stats.get("efficiency", {}).get("cost_saved_usd", 0)
+                st.metric("💰 Cost", f"${cost:.4f}", f"Saved ${saved:.4f}")
+
+            st.markdown("---")
+
+            # ENTITY PROCESSING BREAKDOWN
+            st.markdown("### 🔍 Entity Processing Breakdown")
+            decisions = stats.get("entity_decisions", {})
+
+            breakdown_col1, breakdown_col2, breakdown_col3, breakdown_col4 = st.columns(
+                4
+            )
+
+            with breakdown_col1:
+                st.info(
+                    f"**Skipped Generic:** {len(decisions.get('skipped_generic', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("skipped_generic", [])[:3]]
+                    )
+                )
+            with breakdown_col2:
+                st.success(
+                    f"**Local Knowledge:** {len(decisions.get('used_knowledge', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("used_knowledge", [])[:3]]
+                    )
+                )
+            with breakdown_col3:
+                st.warning(
+                    f"**Unknown (Searched):** {len(decisions.get('searched_unknown', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("searched_unknown", [])[:3]]
+                    )
+                )
+            with breakdown_col4:
+                st.info(
+                    f"**Recent Info (Searched):** {len(decisions.get('searched_recent', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("searched_recent", [])[:3]]
+                    )
+                )
+
+            st.markdown("---")
+
+            # INFORMATION SOURCES ATTRIBUTION
+            st.markdown("### 📚 Information Sources Attribution")
+            sources_info = stats.get("information_sources", {})
+
+            if sources_info:
+                sources_col1, sources_col2 = st.columns(2)
+
+                with sources_col1:
+                    st.markdown("**Local Knowledge Sources:**")
+                    for entity_name, info in sources_info.items():
+                        if info.get("source_type") == "local_knowledge":
+                            conf = info.get("confidence", 0)
+                            st.write(f"✅ **{entity_name}** (confidence: {conf:.0%})")
+                            st.caption(
+                                f"💭 {info.get('known_info', 'Known from training')[:100]}..."
+                            )
+
+                with sources_col2:
+                    st.markdown("**Web Search Sources:**")
+                    for entity_name, info in sources_info.items():
+                        if info.get("source_type") == "linkup":
+                            st.write(
+                                f"🌐 **{entity_name}** ({info.get('sources_count', 0)} sources)"
+                            )
+                            st.caption(f"Query: {info.get('query_used', 'N/A')[:80]}")
+
+            st.markdown("---")
+
+            # PERFORMANCE DETAILS
+            st.markdown("### ⚙️ Performance Details")
+            perf = stats.get("performance", {})
+            timings = perf.get("timings", {})
+            api_calls = perf.get("api_calls", {})
+
+            perf_col1, perf_col2 = st.columns(2)
+
+            with perf_col1:
+                st.markdown("**API Calls:**")
+                for call_type, count in api_calls.items():
+                    if count > 0:
+                        st.write(f"• {call_type}: {count}")
+                st.markdown(f"**Total API Calls:** {perf.get('total_api_calls', 0)}")
+
+            with perf_col2:
+                st.markdown("**Execution Timings:**")
+                for timing_type, duration in timings.items():
+                    st.write(f"• {timing_type}: {duration}s")
+                st.markdown(f"**Total:** {result.get('execution_time', 0):.2f}s")
+
+            st.markdown("---")
+
+            # DRAFT QUALITY ANALYSIS
+            st.markdown("### ✍️ Draft Quality Analysis")
+            draft_analysis = stats.get("draft_analysis", {})
+
+            if draft_analysis:
+                quality_col1, quality_col2, quality_col3 = st.columns(3)
+
+                with quality_col1:
+                    st.metric(
+                        "Word Count",
+                        draft_analysis.get("word_count", 0),
+                        "target: 100-150",
+                    )
+
+                with quality_col2:
+                    st.metric(
+                        "Structure",
+                        f"{draft_analysis.get('paragraphs', 0)} paragraphs",
+                        f"{draft_analysis.get('sentences', 0)} sentences",
+                    )
+
+                with quality_col3:
+                    mentions = draft_analysis.get("entities_mentioned_count", 0)
+                    st.metric(
+                        "Entity References",
+                        mentions,
+                        f"{draft_analysis.get('research_references', 0)} research cites",
+                    )
+
+                # Quality indicators
+                quality_ind = draft_analysis.get("quality_indicators", {})
+                st.markdown("**Quality Checks:**")
+                check_col1, check_col2, check_col3 = st.columns(3)
+
+                with check_col1:
+                    status = "✅" if quality_ind.get("concise") else "❌"
+                    st.write(f"{status} Concise (≤200 words)")
+
+                with check_col2:
+                    status = "✅" if quality_ind.get("well_structured") else "❌"
+                    st.write(f"{status} Well Structured (3-4 paragraphs)")
+
+                with check_col3:
+                    status = "✅" if quality_ind.get("uses_research") else "❌"
+                    st.write(f"{status} Uses Research")
+
+            st.markdown("---")
+
+            # EFFICIENCY VISUALIZATION
+            st.markdown("### 📊 Efficiency Breakdown")
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                # Processing Metrics Section
-                st.markdown("### 📈 Processing Metrics")
-                metric_col1, metric_col2, metric_col3 = st.columns(3)
-                with metric_col1:
-                    st.metric(
-                        "Execution Time", f"{result.get('execution_time', 'N/A'):.2f}s"
-                    )
-                with metric_col2:
-                    st.metric("Total Sources", len(result.get("sources", [])))
-                with metric_col3:
-                    st.metric("Entities Analyzed", stats.get("total_entities", 0))
-
-                st.markdown("---")
-
                 # Smart Linkup Impact Section
-                st.markdown("### 🔗 Smart Linkup Impact")
+                st.markdown("#### 🔗 Smart Linkup Impact")
                 if stats:
                     impact_col1, impact_col2 = st.columns(2)
                     with impact_col1:
                         st.write(
-                            f"**Total Entities:** {stats.get('total_entities', 0)}"
+                            f"**Total Entities:** {stats.get('total_entities_detected', 0)}"
                         )
                         st.write(
-                            f"**Web Searched (Linkup):** {stats.get('entities_searched', 0)}"
+                            f"**Processed:** {stats.get('total_entities_processed', 0)}"
                         )
                     with impact_col2:
                         st.write(
-                            f"**Used Existing Knowledge:** {stats.get('entities_known', 0)}"
+                            f"**Used Knowledge:** {stats.get('entities_used_knowledge', 0)}"
                         )
-                        st.write(
-                            f"**Sources Retrieved:** {stats.get('linkup_sources', 0)}"
-                        )
+                        st.write(f"**Searched:** {stats.get('entities_searched', 0)}")
 
-                    efficiency = stats.get("efficiency_pct", 0)
-                    st.markdown(f"### ⚡ Efficiency Metric")
-                    st.progress(efficiency / 100)
+                    efficiency = stats.get("efficiency", {}).get("efficiency_rate", 0)
+                    st.markdown(f"#### ⚡ Efficiency: {efficiency:.1f}%")
+                    st.progress(min(100, efficiency) / 100)
                     st.markdown(
-                        f"**{efficiency:.1f}%** of entities used existing knowledge • "
-                        f"**Cost Reduction:** {efficiency:.0f}% fewer API calls"
+                        f"**{efficiency:.1f}%** efficiency • "
+                        f"**Avoided:** {stats.get('efficiency', {}).get('searches_avoided', 0)} searches"
                     )
 
             with col2:
                 # Content Source Analytics Panel
-                st.markdown("### 📊 Content Breakdown")
+                st.markdown("#### 📊 Source Breakdown")
 
                 # Calculate content percentages
-                total_entities = stats.get("total_entities", 1)
+                total_entities = stats.get("total_entities_processed", 1)
                 linkup_entities = stats.get("entities_searched", 0)
-                known_entities = stats.get("entities_known", 0)
+                known_entities = stats.get("entities_used_knowledge", 0)
 
                 linkup_pct = (
                     (linkup_entities / total_entities * 100)
