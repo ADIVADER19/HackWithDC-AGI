@@ -14,8 +14,38 @@ from .linkup_wrapper import LinkupWrapper
 
 
 class EmailIntelligenceAgent:
+    # List of generic terms that shouldn't be searched
+    GENERIC_TERMS = [
+        "real-time data processing",
+        "real-time processing",
+        "machine learning",
+        "artificial intelligence",
+        "cloud computing",
+        "data analytics",
+        "big data",
+        "deep learning",
+        "natural language processing",
+        "computer vision",
+        "iot",
+        "blockchain",
+        "web3",
+        "ai/ml",
+        "ai",
+        "ml",
+        "quantum computing",
+        "edge computing",
+        "neural networks",
+        "data science",
+        "enterprise software",
+        "saas",
+        "apis",
+    ]
+
     def __init__(
-        self, groq_client: GroqClient = None, linkup_wrapper: LinkupWrapper = None
+        self,
+        groq_client: GroqClient = None,
+        linkup_wrapper: LinkupWrapper = None,
+        recipient_company: str = "DataFlow AI",
     ):
         """
         Initialize Email Agent with AI and search capabilities
@@ -23,9 +53,11 @@ class EmailIntelligenceAgent:
         Args:
             groq_client: GroqClient instance (creates new if None)
             linkup_wrapper: LinkupWrapper instance (creates new if None)
+            recipient_company: Name of the recipient company (for self-reference filtering)
         """
         self.groq = groq_client or GroqClient()
         self.linkup = linkup_wrapper or LinkupWrapper()
+        self.recipient_company = recipient_company
         self.reasoning_steps = []
         self.execution_log = []
         self.stats = {
@@ -348,7 +380,7 @@ If nothing qualifies, return: []"""
     def _improve_draft(self, draft: str) -> str:
         """
         Post-process drafted reply to improve quality
-        Removes clichés and shortens if too long
+        Removes clichés and ensures proper length
         """
         # List of clichés to remove
         cliches = [
@@ -385,14 +417,35 @@ If nothing qualifies, return: []"""
 
         # Check word count
         word_count = len(improved.split())
-        if word_count > 200:
-            # Try to shorten by asking LLM
+
+        # If too short (< 80 words), ask LLM to expand
+        if word_count < 80:
             self.add_reasoning(
-                f"⚠️ Draft is {word_count} words (max 150), attempting to shorten...",
+                f"⚠️ Draft is {word_count} words (too short, target 100-150), expanding...",
                 "warning",
             )
 
-            shorten_prompt = f"""Make this email reply shorter (exactly 100-150 words) while keeping the key points:
+            expand_prompt = f"""Expand this email reply to 100-150 words. Add more detail about your interest and next steps. Keep the tone warm and conversational.
+
+Original:
+{improved}
+
+Expanded version (100-150 words):"""
+
+            response = self.groq.chat(
+                messages=[{"role": "user", "content": expand_prompt}], temperature=0.5
+            )
+            if not response.get("error"):
+                improved = response.get("content", improved)
+
+        # If too long (> 200 words), shorten
+        elif word_count > 200:
+            self.add_reasoning(
+                f"⚠️ Draft is {word_count} words (too long, max 150), shortening...",
+                "warning",
+            )
+
+            shorten_prompt = f"""Make this email reply shorter (exactly 100-150 words) while keeping the key points and warm tone:
 
 {improved}
 
@@ -408,37 +461,125 @@ Shortened version (100-150 words only):"""
 
     def _is_generic_term(self, entity_name: str, entity_type: str) -> bool:
         """Check if entity is too generic to research"""
-        generic_terms = [
-            "real-time data processing",
-            "machine learning",
-            "artificial intelligence",
-            "cloud computing",
-            "data analytics",
-            "big data",
-            "deep learning",
-            "natural language processing",
-            "computer vision",
-            "iot",
-            "blockchain",
-            "web3",
-            "ai/ml",
-            "quantum computing",
-            "edge computing",
-        ]
+        entity_lower = entity_name.lower().strip()
 
-        entity_lower = entity_name.lower()
+        # Exact match against generic terms
+        for generic in self.GENERIC_TERMS:
+            if entity_lower == generic:
+                return True
 
-        # Check if it's a generic term
-        if entity_lower in generic_terms:
-            return True
-
-        # Check if entity_type suggests generic concept
+        # Only treat as generic if it's clearly a concept, not a company name
+        # Don't filter company names just because they contain a word like "cloud"
         if entity_type in ["product/service", "technology", "concept"]:
-            for generic in generic_terms:
-                if generic in entity_lower:
+            # Only filter if it's an exact or very close match
+            for generic in self.GENERIC_TERMS:
+                if entity_lower == generic or entity_lower.split() == generic.split():
                     return True
 
+        # Specific pattern: "real-time processing" type phrases
+        if "real-time" in entity_lower and (
+            "process" in entity_lower or "data" in entity_lower
+        ):
+            return True
+
         return False
+
+    def _is_self_reference(self, entity_name: str) -> bool:
+        """
+        Check if entity is a self-reference (the recipient company)
+        Don't waste searches on researching ourselves!
+        """
+        entity_lower = entity_name.lower().strip()
+        recipient_lower = self.recipient_company.lower().strip()
+
+        # Exact match or close match
+        if entity_lower == recipient_lower:
+            return True
+
+        # Handle variations (e.g., "DataFlow AI" vs "dataflow")
+        entity_clean = entity_lower.replace(" ", "").replace("-", "")
+        recipient_clean = recipient_lower.replace(" ", "").replace("-", "")
+
+        if entity_clean == recipient_clean:
+            return True
+
+        return False
+
+    def _prioritize_entities(
+        self, entities: List[Dict[str, str]], email_content: str
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """
+        Smart entity prioritization: CRITICAL → VALIDATION → SKIP
+
+        CRITICAL: Must research for credibility (sender's company, key people)
+        VALIDATION: Quick research if time allows (portfolio companies mentioned)
+        SKIP: Don't waste resources (generic terms, self-references)
+
+        Args:
+            entities: List of extracted entities
+            email_content: Email content for context
+
+        Returns:
+            Dict with 'critical', 'validation', 'skip' lists
+        """
+        critical = []
+        validation = []
+        skip = []
+
+        for entity in entities:
+            entity_name = entity.get("name", "")
+            entity_type = entity.get("type", "")
+            context = entity.get("context", "").lower()
+
+            # SKIP: Self-references
+            if self._is_self_reference(entity_name):
+                skip.append(entity)
+                continue
+
+            # SKIP: Generic terms
+            if self._is_generic_term(entity_name, entity_type):
+                skip.append(entity)
+                continue
+
+            # CRITICAL: Sender's company/org
+            if (
+                "sender" in context
+                or "from" in context
+                or "vc" in context
+                or "investor" in context
+            ):
+                if entity_type == "company" or "ventures" in entity_name.lower():
+                    critical.append(entity)
+                    continue
+
+            # CRITICAL: Key people (sender, founders, important contacts)
+            if entity_type == "person":
+                if any(
+                    keyword in context
+                    for keyword in [
+                        "managing director",
+                        "founder",
+                        "ceo",
+                        "director",
+                        "investor",
+                    ]
+                ):
+                    critical.append(entity)
+                    continue
+
+            # VALIDATION: Portfolio companies, mentioned businesses
+            if "portfolio" in context or "company" in entity_type:
+                if any(
+                    keyword in context
+                    for keyword in ["portfolio", "invest", "partner", "example"]
+                ):
+                    validation.append(entity)
+                    continue
+
+            # Default to validation if uncertain
+            validation.append(entity)
+
+        return {"critical": critical, "validation": validation, "skip": skip}
 
     def _analyze_draft_composition(
         self, draft: str, email: str, research: Dict
@@ -527,37 +668,44 @@ Shortened version (100-150 words only):"""
                     elif data.get("error"):
                         research_context += f"[Search Error] {data.get('error')}\n"
 
-        prompt = f"""Draft a CONCISE, WARM email reply (100-150 words MAXIMUM).
+        prompt = f"""Draft a response email. TARGET: 100-150 words EXACTLY.
 
 ORIGINAL EMAIL:
 {email_content}
 
 {research_context}
 
-TONE RULES:
-- Conversational and warm (use contractions: I'm, we're, you're)
-- Short sentences and short paragraphs
-- NO corporate jargon or clichés (avoid: "I hope this finds you well", "testament to", "drive innovation", "looking forward to")
-- Sound human, not like AI wrote it
+YOUR TONE AND STYLE:
+- Conversational and warm - use contractions (I'm, we're, we'd, don't, you're)
+- Short sentences (12-15 words max each)
+- Sound like a real human, not corporate or stiff
+- Natural language, genuine tone
 
-STRUCTURE:
-1. Brief thanks (1-2 sentences)
-2. Show you know them (1 sentence with specific research)
-3. Express interest + next step (1-2 sentences)
+WHAT TO INCLUDE:
+1. Warm greeting/thanks (show you read the email)
+2. Specific mention of 1-2 research findings (show you did homework)
+3. Express genuine interest in next steps
+4. Suggest a concrete next step (call, meeting time)
 
-EXAMPLE:
+WHAT TO AVOID:
+- Corporate clichés: "I hope this email finds you well", "looking forward to hearing from you", "testament to", "drive innovation", "best regards", "kind regards", "in closing"
+- Generic phrases: "synergies", "win-win", "at your earliest convenience"
+- Repetition: Don't say the same thing twice
+- Fluff: Every sentence must add value
+
+GOOD EXAMPLE (115 words):
 Hi Alex,
 
-Thanks for reaching out! I'm familiar with Acme Ventures' focus on frontier tech—your portfolio of Quantum Labs and CloudScale is impressive.
+Thanks for reaching out! I really appreciate you thinking of DataFlow AI. I'm familiar with Acme Ventures' work in frontier AI and data infrastructure—your portfolio companies like Quantum Labs and NeuralNet Systems are impressive.
 
-We'd definitely be interested in exploring a partnership. Our recent Q4 growth aligns well with your investment thesis.
+We're excited about what you're describing. Our 40% Q4 growth and recent enterprise partnerships show we're hitting real product-market fit in this space. I think there's genuine synergy here.
 
-How about Tuesday or Wednesday for a quick call?
+I'm based in SF and available most days. How about Tuesday or Wednesday afternoon for a quick call? Happy to meet in person too if that works better.
 
-Best,
-Alex
+Thanks again,
+[Your Name]
 
-Now draft the reply (MAXIMUM 150 words):
+NOW WRITE YOUR RESPONSE (100-150 words):
 """
 
         try:
@@ -592,7 +740,7 @@ Now draft the reply (MAXIMUM 150 words):
     ) -> Dict[str, Any]:
         """
         Main workflow: Analyze email, research entities, draft reply
-        Enhanced with comprehensive stats tracking
+        Enhanced with comprehensive stats tracking and smart entity prioritization
 
         Args:
             email_content: Full email text
@@ -619,27 +767,86 @@ Now draft the reply (MAXIMUM 150 words):
         self.timings["entity_extraction"] = round(time.time() - extraction_start, 2)
         self.api_calls["groq_entity_extraction"] = 1
 
+        # STEP 1.5: Prioritize entities (CRITICAL, VALIDATION, SKIP)
+        prioritization_start = time.time()
+        prioritized = self._prioritize_entities(entities, email_content)
+        self.timings["entity_prioritization"] = round(
+            time.time() - prioritization_start, 2
+        )
+
+        critical_entities = prioritized.get("critical", [])
+        validation_entities = prioritized.get("validation", [])
+        skipped_entities = prioritized.get("skip", [])
+
+        # Log prioritization results
+        if skipped_entities:
+            skipped_names = ", ".join([e.get("name", "?") for e in skipped_entities])
+            self.add_reasoning(
+                f"⏭️ Skipping {len(skipped_entities)} entities (generic/self-ref): {skipped_names}",
+                "info",
+            )
+
+        if critical_entities:
+            critical_names = ", ".join([e.get("name", "?") for e in critical_entities])
+            self.add_reasoning(f"🔴 CRITICAL to research: {critical_names}", "info")
+
+        if validation_entities:
+            validation_names = ", ".join(
+                [e.get("name", "?") for e in validation_entities]
+            )
+            self.add_reasoning(f"🟡 Validation research: {validation_names}", "info")
+
         # STEP 2: Research entities with enhanced tracking
         assessment_start = time.time()
         research_data = {}
         entity_decisions = {
+            "skipped_self_reference": [],
             "skipped_generic": [],
             "used_knowledge": [],
             "searched_unknown": [],
-            "searched_recent": [],
+            "searched_validation": [],
         }
         information_sources = {}
 
-        if entities:
-            for entity in entities:
+        # Process CRITICAL entities first (must research)
+        # For VALIDATION entities, only research up to 2 to maintain efficiency
+        entities_to_research = critical_entities.copy()
+        validation_to_research = validation_entities[
+            :2
+        ]  # Limit to 2 validation entities
+
+        entities_to_research.extend(validation_to_research)
+
+        # Log which validation entities we're skipping
+        if len(validation_entities) > 2:
+            skipped_validation = validation_entities[2:]
+            for entity in skipped_validation:
+                entity_name = entity.get("name", "")
+                entity_decisions["skipped_generic"].append(
+                    entity_name
+                )  # Track as efficiency skip
+                self.add_reasoning(
+                    f"⏭️ Skipping validation entity (efficiency): {entity_name}", "info"
+                )
+
+        if entities_to_research:
+            for entity in entities_to_research:
                 entity_name = entity.get("name", "")
                 entity_type = entity.get("type", "")
 
-                # Check if generic (should skip)
+                # Check if self-reference (extra safety check)
+                if self._is_self_reference(entity_name):
+                    entity_decisions["skipped_self_reference"].append(entity_name)
+                    self.add_reasoning(
+                        f"⏭️ Self-reference (skipping): {entity_name}", "info"
+                    )
+                    continue
+
+                # Check if generic (extra safety check)
                 if self._is_generic_term(entity_name, entity_type):
                     entity_decisions["skipped_generic"].append(entity_name)
                     self.add_reasoning(
-                        f"⏭️ Skipping generic term: {entity_name}", "info"
+                        f"⏭️ Generic term (skipping): {entity_name}", "info"
                     )
                     continue
 
@@ -667,17 +874,38 @@ Now draft the reply (MAXIMUM 150 words):
                         "sources": [],
                     }
                 else:
-                    # Determine search reason
+                    # Determine search reason and improve query
                     reasoning_lower = assessment.get("reasoning", "").lower()
-                    if "unknown" in reasoning_lower or "not" in reasoning_lower:
-                        entity_decisions["searched_unknown"].append(entity_name)
-                    else:
-                        entity_decisions["searched_recent"].append(entity_name)
+                    is_critical = any(
+                        e.get("name") == entity_name for e in critical_entities
+                    )
 
-                    # Search Linkup
+                    if is_critical:
+                        entity_decisions["searched_unknown"].append(entity_name)
+                        search_reason = (
+                            "CRITICAL: Unknown entity, need credibility check"
+                        )
+                    else:
+                        entity_decisions["searched_validation"].append(entity_name)
+                        search_reason = "VALIDATION: Portfolio/connection check"
+
+                    # Build better search query with context
                     search_query = assessment.get(
                         "search_query", f"{entity_name} recent news"
                     )
+
+                    # Enhance search query with quotes and context
+                    if '"' not in search_query:
+                        search_query = f'"{entity_name}"'
+                        if entity_type == "company":
+                            search_query += " company"
+                        elif entity_type == "person":
+                            search_query += " linkedin"
+
+                    self.add_reasoning(
+                        f"🔍 {search_reason}: {entity_name} → Query: {search_query}"
+                    )
+
                     try:
                         search_results = self.linkup.search(search_query, max_results=5)
                         self.api_calls["linkup_searches"] += 1
@@ -689,6 +917,7 @@ Now draft the reply (MAXIMUM 150 words):
                             "sources_count": len(sources),
                             "query_used": search_query,
                             "assessment_reasoning": assessment.get("reasoning", ""),
+                            "priority": "critical" if is_critical else "validation",
                         }
                         research_data[entity_name] = {
                             "entity": entity_name,
@@ -698,7 +927,14 @@ Now draft the reply (MAXIMUM 150 words):
                             "query_used": search_query,
                             "used_existing_knowledge": False,
                         }
+                        self.add_reasoning(
+                            f"✓ Found {len(sources)} sources for {entity_name}",
+                            "success",
+                        )
                     except Exception as e:
+                        self.add_reasoning(
+                            f"❌ Search failed for {entity_name}: {str(e)}", "error"
+                        )
                         research_data[entity_name] = {
                             "entity": entity_name,
                             "type": entity_type,
@@ -707,6 +943,14 @@ Now draft the reply (MAXIMUM 150 words):
                         }
 
                 time.sleep(0.5)  # Rate limiting
+
+        # Log skipped entities
+        for entity in skipped_entities:
+            entity_name = entity.get("name", "")
+            if self._is_self_reference(entity_name):
+                entity_decisions["skipped_self_reference"].append(entity_name)
+            else:
+                entity_decisions["skipped_generic"].append(entity_name)
 
         self.timings["knowledge_assessment_and_research"] = round(
             time.time() - assessment_start, 2
@@ -730,10 +974,12 @@ Now draft the reply (MAXIMUM 150 words):
 
         # Calculate efficiency metrics
         entities_with_knowledge = len(entity_decisions["used_knowledge"])
-        entities_searched = len(entity_decisions["searched_unknown"]) + len(
-            entity_decisions["searched_recent"]
-        )
-        entities_skipped = len(entity_decisions["skipped_generic"])
+        entities_searched_critical = len(entity_decisions["searched_unknown"])
+        entities_searched_validation = len(entity_decisions["searched_validation"])
+        entities_searched = entities_searched_critical + entities_searched_validation
+        entities_skipped_self = len(entity_decisions["skipped_self_reference"])
+        entities_skipped_generic = len(entity_decisions["skipped_generic"])
+        entities_skipped = entities_skipped_self + entities_skipped_generic
         total_entities_processed = entities_with_knowledge + entities_searched
 
         # Calculate cost savings
@@ -756,7 +1002,7 @@ Now draft the reply (MAXIMUM 150 words):
         # Add summary to reasoning
         self.add_reasoning(
             f"📊 Processed {len(entities)} entities: "
-            f"{entities_skipped} skipped (generic), "
+            f"{entities_skipped} skipped (self/generic), "
             f"{entities_with_knowledge} used knowledge, "
             f"{entities_searched} searched",
             "info",
@@ -769,6 +1015,34 @@ Now draft the reply (MAXIMUM 150 words):
             if potential_searches > 0
             else 0
         )
+
+        # Validation checks: Portfolio verification and credibility scoring
+        portfolio_verified = False
+        sender_verified = False
+        credibility_score = 0.5
+
+        # Check if we found portfolio companies mentioned
+        for entity_name, sources in information_sources.items():
+            if (
+                sources.get("priority") == "critical"
+                and sources.get("sources_count", 0) > 0
+            ):
+                sender_verified = True
+            if (
+                sources.get("priority") == "validation"
+                and sources.get("sources_count", 0) > 0
+            ):
+                portfolio_verified = True
+
+        # Calculate credibility score based on verification
+        if sender_verified:
+            credibility_score = 0.85  # High confidence if sender verified
+        elif entities_searched > 0:
+            credibility_score = 0.75  # Medium-high if researched
+        elif entities_with_knowledge > 0:
+            credibility_score = 0.70  # Medium if used knowledge
+        else:
+            credibility_score = 0.50  # Low if no research done
 
         return {
             "entities": entities,
@@ -784,8 +1058,11 @@ Now draft the reply (MAXIMUM 150 words):
                 # Basic counts
                 "total_entities_detected": len(entities),
                 "total_entities_processed": total_entities_processed,
-                "entities_skipped_generic": entities_skipped,
+                "entities_skipped_self_reference": entities_skipped_self,
+                "entities_skipped_generic": entities_skipped_generic,
                 "entities_used_knowledge": entities_with_knowledge,
+                "entities_searched_critical": entities_searched_critical,
+                "entities_searched_validation": entities_searched_validation,
                 "entities_searched": entities_searched,
                 "linkup_sources_found": len(all_sources),
                 # Decision breakdown
@@ -810,5 +1087,12 @@ Now draft the reply (MAXIMUM 150 words):
                 },
                 # Draft analysis
                 "draft_analysis": draft_analysis,
+                # Validation checks
+                "validation": {
+                    "portfolio_verified": portfolio_verified,
+                    "sender_verified": sender_verified,
+                    "credibility_score": round(credibility_score, 2),
+                    "red_flags": [],  # Can be expanded with validation logic
+                },
             },
         }
