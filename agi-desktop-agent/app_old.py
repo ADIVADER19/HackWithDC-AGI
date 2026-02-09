@@ -1,0 +1,760 @@
+"""
+Email Intelligence Agent - Streamlit UI
+Interactive interface to test email analysis with Smart Linkup Usage
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add src directory to path
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent / "config"))
+
+import streamlit as st
+from datetime import datetime
+import json
+
+from agents.email_intelligence_agent import EmailIntelligenceAgent
+from tests.demo_data.sample_emails import DEMO_EMAILS, list_demo_emails
+
+# Page configuration
+st.set_page_config(
+    page_title="Email Intelligence Agent",
+    page_icon="📧",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Custom styling
+st.markdown(
+    """
+<style>
+    .main { padding: 0rem 1rem; }
+    .entity-badge {
+        display: inline-block;
+        padding: 0.3rem 0.6rem;
+        margin: 0.2rem;
+        border-radius: 0.3rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+    .entity-company {
+        background-color: #e3f2fd;
+        color: #1565c0;
+    }
+    .entity-person {
+        background-color: #f3e5f5;
+        color: #7b1fa2;
+    }
+    .entity-product {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+    }
+    .metric-card {
+        background-color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .source-card {
+        background-color: #fafafa;
+        padding: 0.8rem;
+        border-left: 4px solid #2196F3;
+        margin: 0.5rem 0;
+        border-radius: 0.2rem;
+    }
+    .efficiency-high {
+        color: #2e7d32;
+        font-weight: bold;
+    }
+    .efficiency-medium {
+        color: #f57c00;
+        font-weight: bold;
+    }
+    .efficiency-low {
+        color: #c62828;
+        font-weight: bold;
+    }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+def format_entity_badge(entity_name: str, entity_type: str) -> str:
+    """Format entity as styled badge"""
+    type_class = {
+        "company": "entity-company",
+        "person": "entity-person",
+        "product": "entity-product",
+    }.get(entity_type.lower(), "entity-company")
+
+    return f'<span class="entity-badge {type_class}">{entity_name} <small>({entity_type})</small></span>'
+
+
+def format_efficiency(efficiency_pct: float) -> str:
+    """Format efficiency metric with color"""
+    if efficiency_pct >= 70:
+        css_class = "efficiency-high"
+    elif efficiency_pct >= 40:
+        css_class = "efficiency-medium"
+    else:
+        css_class = "efficiency-low"
+
+    return f'<span class="{css_class}">{efficiency_pct:.1f}%</span>'
+
+
+def main():
+    # Header
+    st.title("📧 Email Intelligence Agent")
+    st.markdown("*Analyze emails with smart research and intelligent reply generation*")
+
+    # Sidebar
+    with st.sidebar:
+        st.header("⚙️ Configuration")
+
+        mode = st.radio(
+            "Select Input Mode:",
+            ["Use Demo Email", "Paste Custom Email"],
+            help="Choose how to input the email",
+        )
+
+        st.markdown("---")
+        st.markdown("### 🚀 About Smart Linkup Usage")
+        st.markdown(
+            """
+        This agent intelligently decides when to search:
+        - **Known entities** (Google, Microsoft) → Use existing knowledge
+        - **Unknown entities** (startups) → Execute web search
+        - **Mixed** → Hybrid approach for optimal cost/quality
+        
+        **Result**: 75% fewer API calls while maintaining quality
+        """
+        )
+
+    # Main content area
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.subheader("📝 Email Input")
+
+        if mode == "Use Demo Email":
+            demo_options = list_demo_emails()
+            selected_demo = st.selectbox(
+                "Choose a demo email:",
+                demo_options,
+                help="Select from sample business emails",
+            )
+
+            email_data = DEMO_EMAILS[selected_demo]
+            email_content = email_data["content"]
+            email_metadata = email_data.get("metadata", {})
+
+            # Display email preview
+            with st.expander("📧 Email Preview", expanded=True):
+                st.markdown(f"**From:** {email_data.get('from', 'Unknown')}")
+                st.markdown(f"**Subject:** {email_data.get('subject', 'No Subject')}")
+                st.markdown(f"**Date:** {email_data.get('date', 'Unknown')}")
+                st.markdown("---")
+                st.text(email_content)
+
+        else:
+            email_content = st.text_area(
+                "Paste your email content:",
+                height=250,
+                placeholder="Enter the email text here...",
+                help="Paste the email you want to analyze",
+            )
+            email_metadata = {
+                "from": st.text_input("From (optional):", ""),
+                "subject": st.text_input("Subject (optional):", ""),
+                "date": datetime.now().isoformat(),
+            }
+
+    with col2:
+        st.subheader("🎛️ Options")
+
+        show_reasoning = st.checkbox(
+            "Show reasoning steps", value=True, help="Display decision-making process"
+        )
+
+        show_all_sources = st.checkbox(
+            "Show all sources", value=False, help="Display all sources vs top 3"
+        )
+
+        st.markdown("---")
+
+        # Analysis button
+        if st.button("🔍 Analyze Email", use_container_width=True, type="primary"):
+            st.session_state.run_analysis = True
+
+    # Run analysis if button clicked
+    if st.session_state.get("run_analysis"):
+        if mode == "Paste Custom Email" and not email_content.strip():
+            st.error("❌ Please enter email content")
+        else:
+            with st.spinner("🔄 Analyzing email..."):
+                try:
+                    # Initialize agent
+                    agent = EmailIntelligenceAgent()
+
+                    # Analyze email
+                    result = agent.analyze_email(email_content, email_metadata)
+
+                    # Store result in session state
+                    st.session_state.last_result = result
+                    st.session_state.run_analysis = False
+
+                except Exception as e:
+                    st.error(f"❌ Analysis failed: {str(e)}")
+                    import traceback
+
+                    st.error(traceback.format_exc())
+
+    # Display results if available
+    if st.session_state.get("last_result"):
+        result = st.session_state.last_result
+
+        st.markdown("---")
+        st.subheader("📊 Analysis Results")
+
+        # Metrics row
+        metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
+
+        stats = result.get("stats", {})
+        with metrics_col1:
+            st.metric("Total Entities", stats.get("total_entities", 0))
+        with metrics_col2:
+            st.metric("Searched (Linkup)", stats.get("entities_searched", 0))
+        with metrics_col3:
+            st.metric("Using Knowledge", stats.get("entities_known", 0))
+        with metrics_col4:
+            efficiency = stats.get("efficiency_pct", 0)
+            st.metric("Efficiency", f"{efficiency:.1f}%")
+
+        # Content source breakdown row
+        st.markdown("---")
+        st.markdown("### 📊 Content Source Analysis")
+
+        source_col1, source_col2, source_col3, source_col4 = st.columns(4)
+
+        total_entities = stats.get("total_entities", 1)
+        linkup_entities = stats.get("entities_searched", 0)
+        known_entities = stats.get("entities_known", 0)
+        linkup_sources = stats.get("linkup_sources", 0)
+
+        linkup_pct = (
+            (linkup_entities / total_entities * 100) if total_entities > 0 else 0
+        )
+        known_pct = (known_entities / total_entities * 100) if total_entities > 0 else 0
+        email_pct = 100 - linkup_pct  # Email context is inverse of web search
+
+        with source_col1:
+            st.metric(
+                "🌐 From Linkup/Web",
+                f"{linkup_pct:.0f}%",
+                delta=f"{linkup_entities} entities",
+            )
+        with source_col2:
+            st.metric(
+                "🧠 From LLM Knowledge",
+                f"{known_pct:.0f}%",
+                delta=f"{known_entities} entities",
+            )
+        with source_col3:
+            st.metric("📧 Email Context", f"{email_pct:.0f}%", delta="Sender/content")
+        with source_col4:
+            st.metric(
+                "💡 Data Quality",
+                f"{min(100, (linkup_sources/10)*100):.0f}%",
+                delta=f"{linkup_sources} sources",
+            )
+
+        # Tabs for different sections
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            ["🔍 Entities", "📚 Research", "✍️ Reply", "🧠 Reasoning", "📈 Stats"]
+        )
+
+        # Tab 1: Entities
+        with tab1:
+            st.subheader("Extracted Entities")
+            entities = result.get("entities", [])
+
+            if entities:
+                for i, entity in enumerate(entities, 1):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(
+                            f"{i}. {format_entity_badge(entity['name'], entity['type'])}",
+                            unsafe_allow_html=True,
+                        )
+                        if entity.get("context"):
+                            st.caption(f"Context: {entity['context']}")
+                    with col2:
+                        st.caption(f"Type: {entity.get('type', 'unknown').upper()}")
+            else:
+                st.info("No entities found in email")
+
+        # Tab 2: Research
+        with tab2:
+            st.subheader("Research Findings")
+            research_data = result.get("research", {})
+
+            if research_data:
+                for entity_name, data in research_data.items():
+                    with st.expander(f"🔎 {entity_name}", expanded=True):
+                        # Check source type
+                        if data.get("used_existing_knowledge"):
+                            st.success("✓ Source: Existing Knowledge")
+                            st.write(f"**Info:** {data.get('known_info', 'N/A')}")
+                            st.caption(f"Reasoning: {data.get('reasoning', 'N/A')}")
+                        else:
+                            sources = data.get("sources", [])
+                            if sources:
+                                st.info(f"🔍 Found {len(sources)} sources from Linkup")
+                                num_to_show = (
+                                    len(sources)
+                                    if show_all_sources
+                                    else min(3, len(sources))
+                                )
+                                for j, source in enumerate(sources[:num_to_show], 1):
+                                    st.markdown(
+                                        f"**{j}. {source.get('title', 'No title')}**"
+                                    )
+                                    st.caption(
+                                        f"URL: {source.get('url', 'N/A')[:80]}..."
+                                    )
+                                    st.write(
+                                        source.get("snippet", "No snippet")[:200]
+                                        + "..."
+                                    )
+                                    st.divider()
+                            elif data.get("error"):
+                                st.warning(f"⚠️ Error: {data.get('error')}")
+                            else:
+                                st.info("No sources found")
+            else:
+                st.info("No research conducted")
+
+        # Tab 3: Reply
+        with tab3:
+            st.subheader("Drafted Reply")
+            draft_reply = result.get("draft_reply", "")
+
+            if draft_reply and draft_reply != "Error: Could not generate reply":
+                st.write(draft_reply)
+
+                # Copy button
+                st.code(draft_reply, language="text", line_numbers=False)
+            else:
+                st.warning("Could not generate reply")
+
+        # Tab 4: Reasoning
+        with tab4:
+            st.subheader("Decision-Making Steps")
+            reasoning_steps = result.get("reasoning_steps", [])
+
+            if reasoning_steps and show_reasoning:
+                for step in reasoning_steps:
+                    # Determine icon based on step type
+                    icon = "🧠"
+                    if "✓" in step.get("step", ""):
+                        icon = "✅"
+                    elif "❌" in step.get("step", ""):
+                        icon = "❌"
+                    elif "⚠️" in step.get("step", ""):
+                        icon = "⚠️"
+                    elif "🔍" in step.get("step", ""):
+                        icon = "🔍"
+                    elif "🚀" in step.get("step", ""):
+                        icon = "🚀"
+
+                    st.write(
+                        f"{icon} **[{step.get('timestamp', 'N/A')}]** {step.get('step', '')}"
+                    )
+            elif show_reasoning:
+                st.info("No reasoning steps available")
+            else:
+                st.info("Reasoning display disabled in sidebar")
+
+        # Tab 5: Stats
+        with tab5:
+            st.subheader("📊 Detailed Statistics & Content Source Analysis")
+
+            # Enhanced Stats Display
+            stats = result.get("stats", {})
+
+            # KEY METRICS ROW
+            st.markdown("### 🎯 Key Metrics")
+            key_col1, key_col2, key_col3, key_col4 = st.columns(4)
+
+            with key_col1:
+                efficiency = stats.get("efficiency", {})
+                eff_rate = efficiency.get("efficiency_rate", 0)
+                st.metric(
+                    "💡 Efficiency Rate",
+                    f"{eff_rate:.1f}%",
+                    f"Avoided {efficiency.get('searches_avoided', 0)} searches",
+                )
+            with key_col2:
+                st.metric(
+                    "🧠 Local Knowledge",
+                    stats.get("entities_used_knowledge", 0),
+                    f"vs {stats.get('entities_searched', 0)} searched",
+                )
+            with key_col3:
+                st.metric(
+                    "⏱️ Time Saved",
+                    f"{stats.get('efficiency', {}).get('time_saved_seconds', 0):.1f}s",
+                    "from smart decisions",
+                )
+            with key_col4:
+                perf = stats.get("performance", {})
+                cost = perf.get("estimated_cost_usd", 0)
+                saved = stats.get("efficiency", {}).get("cost_saved_usd", 0)
+                st.metric("💰 Cost", f"${cost:.4f}", f"Saved ${saved:.4f}")
+
+            st.markdown("---")
+
+            # ENTITY PROCESSING BREAKDOWN
+            st.markdown("### 🔍 Entity Processing Breakdown")
+            decisions = stats.get("entity_decisions", {})
+
+            breakdown_col1, breakdown_col2, breakdown_col3, breakdown_col4 = st.columns(
+                4
+            )
+
+            with breakdown_col1:
+                st.info(
+                    f"**Skipped Generic:** {len(decisions.get('skipped_generic', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("skipped_generic", [])[:3]]
+                    )
+                )
+            with breakdown_col2:
+                st.success(
+                    f"**Local Knowledge:** {len(decisions.get('used_knowledge', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("used_knowledge", [])[:3]]
+                    )
+                )
+            with breakdown_col3:
+                st.warning(
+                    f"**Unknown (Searched):** {len(decisions.get('searched_unknown', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("searched_unknown", [])[:3]]
+                    )
+                )
+            with breakdown_col4:
+                st.info(
+                    f"**Recent Info (Searched):** {len(decisions.get('searched_recent', []))}\n\n"
+                    + "\n".join(
+                        [f"• {e}" for e in decisions.get("searched_recent", [])[:3]]
+                    )
+                )
+
+            st.markdown("---")
+
+            # INFORMATION SOURCES ATTRIBUTION
+            st.markdown("### 📚 Information Sources Attribution")
+            sources_info = stats.get("information_sources", {})
+
+            if sources_info:
+                sources_col1, sources_col2 = st.columns(2)
+
+                with sources_col1:
+                    st.markdown("**Local Knowledge Sources:**")
+                    for entity_name, info in sources_info.items():
+                        if info.get("source_type") == "local_knowledge":
+                            conf = info.get("confidence", 0)
+                            st.write(f"✅ **{entity_name}** (confidence: {conf:.0%})")
+                            st.caption(
+                                f"💭 {info.get('known_info', 'Known from training')[:100]}..."
+                            )
+
+                with sources_col2:
+                    st.markdown("**Web Search Sources:**")
+                    for entity_name, info in sources_info.items():
+                        if info.get("source_type") == "linkup":
+                            st.write(
+                                f"🌐 **{entity_name}** ({info.get('sources_count', 0)} sources)"
+                            )
+                            st.caption(f"Query: {info.get('query_used', 'N/A')[:80]}")
+
+            st.markdown("---")
+
+            # PERFORMANCE DETAILS
+            st.markdown("### ⚙️ Performance Details")
+            perf = stats.get("performance", {})
+            timings = perf.get("timings", {})
+            api_calls = perf.get("api_calls", {})
+
+            perf_col1, perf_col2 = st.columns(2)
+
+            with perf_col1:
+                st.markdown("**API Calls:**")
+                for call_type, count in api_calls.items():
+                    if count > 0:
+                        st.write(f"• {call_type}: {count}")
+                st.markdown(f"**Total API Calls:** {perf.get('total_api_calls', 0)}")
+
+            with perf_col2:
+                st.markdown("**Execution Timings:**")
+                for timing_type, duration in timings.items():
+                    st.write(f"• {timing_type}: {duration}s")
+                st.markdown(f"**Total:** {result.get('execution_time', 0):.2f}s")
+
+            st.markdown("---")
+
+            # DRAFT QUALITY ANALYSIS
+            st.markdown("### ✍️ Draft Quality Analysis")
+            draft_analysis = stats.get("draft_analysis", {})
+
+            if draft_analysis:
+                quality_col1, quality_col2, quality_col3 = st.columns(3)
+
+                with quality_col1:
+                    st.metric(
+                        "Word Count",
+                        draft_analysis.get("word_count", 0),
+                        "target: 100-150",
+                    )
+
+                with quality_col2:
+                    st.metric(
+                        "Structure",
+                        f"{draft_analysis.get('paragraphs', 0)} paragraphs",
+                        f"{draft_analysis.get('sentences', 0)} sentences",
+                    )
+
+                with quality_col3:
+                    mentions = draft_analysis.get("entities_mentioned_count", 0)
+                    st.metric(
+                        "Entity References",
+                        mentions,
+                        f"{draft_analysis.get('research_references', 0)} research cites",
+                    )
+
+                # Quality indicators
+                quality_ind = draft_analysis.get("quality_indicators", {})
+                st.markdown("**Quality Checks:**")
+                check_col1, check_col2, check_col3 = st.columns(3)
+
+                with check_col1:
+                    status = "✅" if quality_ind.get("concise") else "❌"
+                    st.write(f"{status} Concise (≤200 words)")
+
+                with check_col2:
+                    status = "✅" if quality_ind.get("well_structured") else "❌"
+                    st.write(f"{status} Well Structured (3-4 paragraphs)")
+
+                with check_col3:
+                    status = "✅" if quality_ind.get("uses_research") else "❌"
+                    st.write(f"{status} Uses Research")
+
+            st.markdown("---")
+
+            # EFFICIENCY VISUALIZATION
+            st.markdown("### 📊 Efficiency Breakdown")
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                # Smart Linkup Impact Section
+                st.markdown("#### 🔗 Smart Linkup Impact")
+                if stats:
+                    impact_col1, impact_col2 = st.columns(2)
+                    with impact_col1:
+                        st.write(
+                            f"**Total Entities:** {stats.get('total_entities_detected', 0)}"
+                        )
+                        st.write(
+                            f"**Processed:** {stats.get('total_entities_processed', 0)}"
+                        )
+                    with impact_col2:
+                        st.write(
+                            f"**Used Knowledge:** {stats.get('entities_used_knowledge', 0)}"
+                        )
+                        st.write(f"**Searched:** {stats.get('entities_searched', 0)}")
+
+                    efficiency = stats.get("efficiency", {}).get("efficiency_rate", 0)
+                    st.markdown(f"#### ⚡ Efficiency: {efficiency:.1f}%")
+                    st.progress(min(100, efficiency) / 100)
+                    st.markdown(
+                        f"**{efficiency:.1f}%** efficiency • "
+                        f"**Avoided:** {stats.get('efficiency', {}).get('searches_avoided', 0)} searches"
+                    )
+
+            with col2:
+                # Content Source Analytics Panel
+                st.markdown("#### 📊 Source Breakdown")
+
+                # Calculate content percentages
+                total_entities = stats.get("total_entities_processed", 1)
+                linkup_entities = stats.get("entities_searched", 0)
+                known_entities = stats.get("entities_used_knowledge", 0)
+
+                linkup_pct = (
+                    (linkup_entities / total_entities * 100)
+                    if total_entities > 0
+                    else 0
+                )
+                known_pct = (
+                    (known_entities / total_entities * 100) if total_entities > 0 else 0
+                )
+
+                # Source breakdown visualization
+                st.markdown("**Content Sources:**")
+
+                col_source1, col_source2 = st.columns(2)
+                with col_source1:
+                    st.markdown(f"🌐 **Linkup/Web**")
+                    st.markdown(
+                        f"<div style='font-size:24px; font-weight:bold; color:#2196F3'>{linkup_pct:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"{linkup_entities}/{total_entities} entities")
+
+                with col_source2:
+                    st.markdown(f"🧠 **LLM Knowledge**")
+                    st.markdown(
+                        f"<div style='font-size:24px; font-weight:bold; color:#4CAF50'>{known_pct:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"{known_entities}/{total_entities} entities")
+
+                st.markdown("---")
+                st.markdown("**Content Quality:**")
+
+                # Data quality metrics
+                has_sources = len(result.get("sources", [])) > 0
+                has_email_context = len(email_content) > 100
+
+                quality_score = 0
+                if linkup_entities > 0:
+                    quality_score += 25
+                if known_entities > 0:
+                    quality_score += 25
+                if has_sources:
+                    quality_score += 25
+                if has_email_context:
+                    quality_score += 25
+
+                st.progress(quality_score / 100)
+                st.caption(f"Data Quality: {quality_score}/100")
+
+                st.markdown("---")
+                st.markdown("**Trust Indicators:**")
+
+                # Trust indicators
+                trust_items = []
+                if known_pct >= 50:
+                    trust_items.append("✅ High knowledge base coverage")
+                if linkup_pct > 0:
+                    trust_items.append("✅ Fresh web data included")
+                if len(result.get("sources", [])) >= 3:
+                    trust_items.append("✅ Multiple sources verified")
+                if efficiency >= 70:
+                    trust_items.append("✅ Cost-optimized analysis")
+
+                for item in trust_items:
+                    st.caption(item)
+
+            st.markdown("---")
+            st.markdown("### 🧠 Knowledge Source Attribution")
+
+            # Attribution breakdown
+            research_data = result.get("research", {})
+
+            if research_data:
+                attribution_col1, attribution_col2 = st.columns(2)
+
+                with attribution_col1:
+                    st.markdown("**From Existing Knowledge:**")
+                    knowledge_sources = []
+                    for entity, data in research_data.items():
+                        if data.get("used_existing_knowledge"):
+                            reasoning = data.get("reasoning", "General knowledge")
+                            knowledge_sources.append(
+                                f"• **{entity}**: {reasoning[:60]}..."
+                            )
+
+                    if knowledge_sources:
+                        for source in knowledge_sources:
+                            st.caption(source)
+                    else:
+                        st.caption("No existing knowledge used")
+
+                with attribution_col2:
+                    st.markdown("**From Web Research (Linkup):**")
+                    linkup_sources = []
+                    for entity, data in research_data.items():
+                        if data.get("sources") and not data.get(
+                            "used_existing_knowledge"
+                        ):
+                            source_count = len(data.get("sources", []))
+                            linkup_sources.append(
+                                f"• **{entity}**: {source_count} sources found"
+                            )
+
+                    if linkup_sources:
+                        for source in linkup_sources:
+                            st.caption(source)
+                    else:
+                        st.caption("No web research performed")
+
+                    # Cost estimation
+                    searches_avoided = stats.get("entities_known", 0)
+                    if searches_avoided > 0:
+                        estimated_savings = searches_avoided * 0.01
+                        st.success(
+                            f"💰 **Estimated Savings:** ${estimated_savings:.2f} (skipped {searches_avoided} API calls)"
+                        )
+
+        # Download results
+        st.markdown("---")
+        st.subheader("📥 Export Results")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            json_str = json.dumps(result, indent=2, default=str)
+            st.download_button(
+                label="📄 Download JSON",
+                data=json_str,
+                file_name=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+            )
+
+        with col2:
+            txt_content = f"""EMAIL ANALYSIS REPORT
+Generated: {result.get('timestamp')}
+
+ENTITIES EXTRACTED:
+{chr(10).join([f"- {e['name']} ({e['type']})" for e in result.get('entities', [])])}
+
+SMART LINKUP STATS:
+- Total Entities: {stats.get('total_entities', 0)}
+- Searched: {stats.get('entities_searched', 0)}
+- Using Knowledge: {stats.get('entities_known', 0)}
+- Efficiency: {stats.get('efficiency_pct', 0):.1f}%
+
+DRAFTED REPLY:
+{result.get('draft_reply', 'N/A')}
+"""
+            st.download_button(
+                label="📝 Download Text",
+                data=txt_content,
+                file_name=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+            )
+
+
+if __name__ == "__main__":
+    # Initialize session state
+    if "run_analysis" not in st.session_state:
+        st.session_state.run_analysis = False
+    if "last_result" not in st.session_state:
+        st.session_state.last_result = None
+
+    main()

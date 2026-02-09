@@ -1,760 +1,610 @@
 """
-Email Intelligence Agent - Streamlit UI
-Interactive interface to test email analysis with Smart Linkup Usage
+AGI Desktop Intelligence Agent - Complete Streamlit App
+All 3 Scenarios: Email Intelligence, Document Analysis, Meeting Preparation
 """
 
+import streamlit as st
 import sys
 import os
 from pathlib import Path
 
-# Add src directory to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-sys.path.insert(0, str(Path(__file__).parent / "config"))
-
-import streamlit as st
-from datetime import datetime
-import json
-
-from agents.email_intelligence_agent import EmailIntelligenceAgent
-from tests.demo_data.sample_emails import DEMO_EMAILS, list_demo_emails
+# Add project root to path so 'src.agents...' imports work
+project_root = str(Path(__file__).parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 # Page configuration
 st.set_page_config(
-    page_title="Email Intelligence Agent",
-    page_icon="📧",
+    page_title="AGI Desktop Intelligence Agent",
+    page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-# Custom styling
-st.markdown(
-    """
+# Custom CSS
+st.markdown("""
 <style>
-    .main { padding: 0rem 1rem; }
-    .entity-badge {
-        display: inline-block;
-        padding: 0.3rem 0.6rem;
-        margin: 0.2rem;
-        border-radius: 0.3rem;
-        font-size: 0.85rem;
-        font-weight: 500;
+    /* Main styling */
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        background: linear-gradient(90deg, #1a73e8 0%, #34a853 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin-bottom: 1rem;
     }
-    .entity-company {
-        background-color: #e3f2fd;
-        color: #1565c0;
+
+    .scenario-description {
+        text-align: center;
+        color: #5f6368;
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
     }
-    .entity-person {
-        background-color: #f3e5f5;
-        color: #7b1fa2;
-    }
-    .entity-product {
-        background-color: #e8f5e9;
-        color: #2e7d32;
-    }
-    .metric-card {
-        background-color: #f5f5f5;
+
+    /* Cards */
+    .reasoning-step {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
         padding: 1rem;
         border-radius: 0.5rem;
         margin: 0.5rem 0;
+        font-weight: 500;
     }
+
     .source-card {
-        background-color: #fafafa;
-        padding: 0.8rem;
-        border-left: 4px solid #2196F3;
+        background-color: #e8f0fe;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #1a73e8;
+        margin: 1rem 0;
+        transition: transform 0.2s;
+    }
+
+    .source-card:hover {
+        transform: translateX(5px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .result-card {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        border: 2px solid #34a853;
+        margin: 1rem 0;
+    }
+
+    .warning-card {
+        background-color: #fff3cd;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #fbbc04;
+        margin: 1rem 0;
+    }
+
+    /* Status badges */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin: 0.25rem;
+    }
+
+    .status-success {
+        background-color: #d4edda;
+        color: #155724;
+    }
+
+    .status-warning {
+        background-color: #fff3cd;
+        color: #856404;
+    }
+
+    .status-info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+    }
+
+    /* Buttons */
+    .stButton > button {
+        width: 100%;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        padding: 0.75rem 1.5rem;
+    }
+
+    /* Progress indicator */
+    .progress-text {
+        font-size: 0.9rem;
+        color: #5f6368;
+        font-style: italic;
         margin: 0.5rem 0;
-        border-radius: 0.2rem;
-    }
-    .efficiency-high {
-        color: #2e7d32;
-        font-weight: bold;
-    }
-    .efficiency-medium {
-        color: #f57c00;
-        font-weight: bold;
-    }
-    .efficiency-low {
-        color: #c62828;
-        font-weight: bold;
     }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
+# Initialize session state
+if 'analysis_complete' not in st.session_state:
+    st.session_state.analysis_complete = False
+if 'current_result' not in st.session_state:
+    st.session_state.current_result = None
 
-def format_entity_badge(entity_name: str, entity_type: str) -> str:
-    """Format entity as styled badge"""
-    type_class = {
-        "company": "entity-company",
-        "person": "entity-person",
-        "product": "entity-product",
-    }.get(entity_type.lower(), "entity-company")
+# Sidebar
+with st.sidebar:
+    st.markdown("### 🤖 AGI Desktop Agent")
+    st.markdown("*Powered by Llama 3.3 + Linkup*")
+    st.markdown("---")
 
-    return f'<span class="entity-badge {type_class}">{entity_name} <small>({entity_type})</small></span>'
+    scenario = st.radio(
+        "**Select Scenario:**",
+        [
+            "🎯 Overview",
+            "📧 Email Intelligence",
+            "📄 Document Analysis",
+            "📅 Meeting Preparation"
+        ],
+        index=0
+    )
 
+    st.markdown("---")
 
-def format_efficiency(efficiency_pct: float) -> str:
-    """Format efficiency metric with color"""
-    if efficiency_pct >= 70:
-        css_class = "efficiency-high"
-    elif efficiency_pct >= 40:
-        css_class = "efficiency-medium"
-    else:
-        css_class = "efficiency-low"
+    # Connection status
+    st.markdown("### 🔌 System Status")
 
-    return f'<span class="{css_class}">{efficiency_pct:.1f}%</span>'
+    try:
+        from src.agents.groq_client import GroqClient
+        groq = GroqClient()
+        if groq.test_connection():
+            st.success("✅ Groq API Connected")
+        else:
+            st.error("❌ Groq API Failed")
+    except Exception as e:
+        st.warning("⚠️ Groq API Not Configured")
 
+    try:
+        from src.agents.linkup_wrapper import LinkupWrapper
+        linkup = LinkupWrapper()
+        if linkup.test_connection():
+            st.success("✅ Linkup API Connected")
+        else:
+            st.error("❌ Linkup API Failed")
+    except Exception as e:
+        st.warning("⚠️ Linkup API Not Configured")
 
-def main():
-    # Header
-    st.title("📧 Email Intelligence Agent")
-    st.markdown("*Analyze emails with smart research and intelligent reply generation*")
+    st.markdown("---")
+    st.markdown("### 📊 Evaluation Criteria")
+    st.caption("✓ Generality (3 domains)")
+    st.caption("✓ Autonomy (ReAct loop)")
+    st.caption("✓ Reasoning Quality")
+    st.caption("✓ Context Awareness")
+    st.caption("✓ Information Synthesis")
+    st.caption("✓ Privacy & Security")
+    st.caption("✓ Usability")
 
-    # Sidebar
-    with st.sidebar:
-        st.header("⚙️ Configuration")
+# Helper function to display reasoning steps
+def display_reasoning_steps(steps):
+    st.markdown("### 🧠 Agent Reasoning Process")
+    for i, step in enumerate(steps, 1):
+        # Handle both string and dict reasoning steps
+        if isinstance(step, dict):
+            step_text = step.get('step', str(step))
+        else:
+            step_text = str(step)
+        st.markdown(f'<div class="reasoning-step">Step {i}: {step_text}</div>', unsafe_allow_html=True)
 
-        mode = st.radio(
-            "Select Input Mode:",
-            ["Use Demo Email", "Paste Custom Email"],
-            help="Choose how to input the email",
-        )
+# Helper function to display Linkup sources
+def display_linkup_sources(sources):
+    st.markdown("### 🔍 Web Research Results")
+    st.caption(f"Found {len(sources)} relevant sources via Linkup")
 
-        st.markdown("---")
-        st.markdown("### 🚀 About Smart Linkup Usage")
-        st.markdown(
-            """
-        This agent intelligently decides when to search:
-        - **Known entities** (Google, Microsoft) → Use existing knowledge
-        - **Unknown entities** (startups) → Execute web search
-        - **Mixed** → Hybrid approach for optimal cost/quality
-        
-        **Result**: 75% fewer API calls while maintaining quality
-        """
-        )
+    if not sources:
+        st.info("No external research was needed for this query.")
+        return
 
-    # Main content area
-    col1, col2 = st.columns([2, 1])
+    for i, source in enumerate(sources, 1):
+        st.markdown(f"""
+        <div class="source-card">
+            <strong>📌 Source {i}: {source.get('title', 'Unknown Title')}</strong><br/>
+            <p style="margin: 0.5rem 0; color: #5f6368;">{source.get('snippet', 'No description available')}</p>
+            <a href="{source.get('url', '#')}" target="_blank" style="color: #1a73e8; text-decoration: none;">
+                🔗 View Full Source →
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Main content
+st.markdown('<div class="main-header">🤖 AGI Desktop Intelligence Agent</div>', unsafe_allow_html=True)
+
+# ==================== OVERVIEW SCREEN ====================
+if scenario == "🎯 Overview":
+    st.markdown('<p class="scenario-description">Choose a scenario to experience AI-powered intelligence with real-time web research</p>', unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader("📝 Email Input")
+        st.markdown("""
+        ### 📧 Email Intelligence
+        **What it does:**
+        - Analyzes incoming emails
+        - Researches unknown entities with Linkup
+        - Drafts intelligent responses
 
-        if mode == "Use Demo Email":
-            demo_options = list_demo_emails()
-            selected_demo = st.selectbox(
-                "Choose a demo email:",
-                demo_options,
-                help="Select from sample business emails",
-            )
+        **Use case:**
+        Reply to investor inquiry with context about their portfolio
 
-            email_data = DEMO_EMAILS[selected_demo]
-            email_content = email_data["content"]
-            email_metadata = email_data.get("metadata", {})
-
-            # Display email preview
-            with st.expander("📧 Email Preview", expanded=True):
-                st.markdown(f"**From:** {email_data.get('from', 'Unknown')}")
-                st.markdown(f"**Subject:** {email_data.get('subject', 'No Subject')}")
-                st.markdown(f"**Date:** {email_data.get('date', 'Unknown')}")
-                st.markdown("---")
-                st.text(email_content)
-
-        else:
-            email_content = st.text_area(
-                "Paste your email content:",
-                height=250,
-                placeholder="Enter the email text here...",
-                help="Paste the email you want to analyze",
-            )
-            email_metadata = {
-                "from": st.text_input("From (optional):", ""),
-                "subject": st.text_input("Subject (optional):", ""),
-                "date": datetime.now().isoformat(),
-            }
+        **Demonstrates:**
+        Autonomy • Information Synthesis • Reasoning
+        """)
 
     with col2:
-        st.subheader("🎛️ Options")
+        st.markdown("""
+        ### 📄 Document Analysis
+        **What it does:**
+        - Extracts text from PDFs
+        - Identifies key clauses
+        - Verifies against industry standards
 
-        show_reasoning = st.checkbox(
-            "Show reasoning steps", value=True, help="Display decision-making process"
+        **Use case:**
+        Review SaaS contract payment terms
+
+        **Demonstrates:**
+        Generality • Multi-Domain • Practical Value
+        """)
+
+    with col3:
+        st.markdown("""
+        ### 📅 Meeting Preparation
+        **What it does:**
+        - Searches past interactions
+        - Researches current company news
+        - Generates comprehensive briefings
+
+        **Use case:**
+        Prepare for partnership meeting
+
+        **Demonstrates:**
+        Context Awareness • Memory Integration
+        """)
+
+    st.info("👈 Select a scenario from the sidebar to get started")
+
+# ==================== SCENARIO 1: EMAIL INTELLIGENCE ====================
+elif scenario == "📧 Email Intelligence":
+    st.markdown("## 📧 Email Intelligence Agent")
+    st.markdown('<p class="scenario-description">Analyze emails and draft intelligent responses with real-time web research</p>', unsafe_allow_html=True)
+
+    # Sample email template
+    if st.checkbox("📝 Load Sample Email (Acme Ventures)"):
+        sample_email = """From: sarah.chen@acmeventures.com
+To: you@yourcompany.com
+Subject: Series A Funding Discussion - Next Steps
+
+Dear Team,
+
+I hope this email finds you well. My name is Sarah Chen, and I'm a Partner at Acme Ventures.
+
+We've been tracking your company's progress over the past few months, and we're very impressed with the traction you've achieved in the AI automation space. Your approach to solving enterprise workflow problems aligns well with our investment thesis.
+
+We'd love to schedule a meeting to discuss potential Series A funding opportunities. Would you be available for a call next week to explore how we might work together?
+
+Looking forward to hearing from you.
+
+Best regards,
+Sarah Chen
+Partner, Acme Ventures"""
+    else:
+        sample_email = ""
+
+    email_text = st.text_area(
+        "**Paste email content here:**",
+        value=sample_email,
+        height=300,
+        placeholder="From: investor@company.com\nSubject: ...\n\nEmail content here..."
+    )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        analyze_button = st.button("🔍 Analyze Email & Draft Reply", type="primary", use_container_width=True)
+
+    if analyze_button and email_text:
+        with st.spinner("🤖 Agent is working... This may take 10-15 seconds"):
+            try:
+                # Import and call agent
+                from src.agents.orchestrator import AgentOrchestrator
+                agent = AgentOrchestrator()
+
+                # Show progress
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                status_text.text("🔍 Analyzing email content...")
+                progress_bar.progress(20)
+
+                status_text.text("🌐 Researching entities with Linkup...")
+                progress_bar.progress(50)
+
+                result = agent.process(
+                    scenario="email",
+                    input_data={"email_content": email_text}
+                )
+
+                status_text.text("✍️ Drafting intelligent response...")
+                progress_bar.progress(80)
+
+                status_text.text("✅ Complete!")
+                progress_bar.progress(100)
+
+                st.session_state.current_result = result
+                st.session_state.analysis_complete = True
+
+                # Clear progress indicators
+                status_text.empty()
+                progress_bar.empty()
+
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
+
+    # Display results
+    if st.session_state.analysis_complete and st.session_state.current_result:
+        result = st.session_state.current_result
+
+        st.success(f"✅ Analysis complete in {result.get('execution_time', 0)}s")
+
+        # Reasoning steps
+        with st.expander("🧠 Agent Reasoning Process", expanded=True):
+            display_reasoning_steps(result.get('reasoning_steps', []))
+
+        # Linkup sources
+        with st.expander("🔍 Web Research Sources", expanded=True):
+            display_linkup_sources(result.get('linkup_sources', []))
+
+        # Draft reply
+        st.markdown("### 📝 Generated Email Reply")
+        confidence = result.get('confidence', 0)
+        if isinstance(confidence, (int, float)):
+            st.markdown(f"**Confidence Score:** {confidence:.0%}")
+
+        draft_reply = st.text_area(
+            "You can edit this before sending:",
+            value=result.get('draft_reply', result.get('result', 'No reply generated')),
+            height=400,
+            key="email_draft"
         )
-
-        show_all_sources = st.checkbox(
-            "Show all sources", value=False, help="Display all sources vs top 3"
-        )
-
-        st.markdown("---")
-
-        # Analysis button
-        if st.button("🔍 Analyze Email", use_container_width=True, type="primary"):
-            st.session_state.run_analysis = True
-
-    # Run analysis if button clicked
-    if st.session_state.get("run_analysis"):
-        if mode == "Paste Custom Email" and not email_content.strip():
-            st.error("❌ Please enter email content")
-        else:
-            with st.spinner("🔄 Analyzing email..."):
-                try:
-                    # Initialize agent
-                    agent = EmailIntelligenceAgent()
-
-                    # Analyze email
-                    result = agent.analyze_email(email_content, email_metadata)
-
-                    # Store result in session state
-                    st.session_state.last_result = result
-                    st.session_state.run_analysis = False
-
-                except Exception as e:
-                    st.error(f"❌ Analysis failed: {str(e)}")
-                    import traceback
-
-                    st.error(traceback.format_exc())
-
-    # Display results if available
-    if st.session_state.get("last_result"):
-        result = st.session_state.last_result
-
-        st.markdown("---")
-        st.subheader("📊 Analysis Results")
-
-        # Metrics row
-        metrics_col1, metrics_col2, metrics_col3, metrics_col4 = st.columns(4)
-
-        stats = result.get("stats", {})
-        with metrics_col1:
-            st.metric("Total Entities", stats.get("total_entities", 0))
-        with metrics_col2:
-            st.metric("Searched (Linkup)", stats.get("entities_searched", 0))
-        with metrics_col3:
-            st.metric("Using Knowledge", stats.get("entities_known", 0))
-        with metrics_col4:
-            efficiency = stats.get("efficiency_pct", 0)
-            st.metric("Efficiency", f"{efficiency:.1f}%")
-
-        # Content source breakdown row
-        st.markdown("---")
-        st.markdown("### 📊 Content Source Analysis")
-
-        source_col1, source_col2, source_col3, source_col4 = st.columns(4)
-
-        total_entities = stats.get("total_entities", 1)
-        linkup_entities = stats.get("entities_searched", 0)
-        known_entities = stats.get("entities_known", 0)
-        linkup_sources = stats.get("linkup_sources", 0)
-
-        linkup_pct = (
-            (linkup_entities / total_entities * 100) if total_entities > 0 else 0
-        )
-        known_pct = (known_entities / total_entities * 100) if total_entities > 0 else 0
-        email_pct = 100 - linkup_pct  # Email context is inverse of web search
-
-        with source_col1:
-            st.metric(
-                "🌐 From Linkup/Web",
-                f"{linkup_pct:.0f}%",
-                delta=f"{linkup_entities} entities",
-            )
-        with source_col2:
-            st.metric(
-                "🧠 From LLM Knowledge",
-                f"{known_pct:.0f}%",
-                delta=f"{known_entities} entities",
-            )
-        with source_col3:
-            st.metric("📧 Email Context", f"{email_pct:.0f}%", delta="Sender/content")
-        with source_col4:
-            st.metric(
-                "💡 Data Quality",
-                f"{min(100, (linkup_sources/10)*100):.0f}%",
-                delta=f"{linkup_sources} sources",
-            )
-
-        # Tabs for different sections
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            ["🔍 Entities", "📚 Research", "✍️ Reply", "🧠 Reasoning", "📈 Stats"]
-        )
-
-        # Tab 1: Entities
-        with tab1:
-            st.subheader("Extracted Entities")
-            entities = result.get("entities", [])
-
-            if entities:
-                for i, entity in enumerate(entities, 1):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(
-                            f"{i}. {format_entity_badge(entity['name'], entity['type'])}",
-                            unsafe_allow_html=True,
-                        )
-                        if entity.get("context"):
-                            st.caption(f"Context: {entity['context']}")
-                    with col2:
-                        st.caption(f"Type: {entity.get('type', 'unknown').upper()}")
-            else:
-                st.info("No entities found in email")
-
-        # Tab 2: Research
-        with tab2:
-            st.subheader("Research Findings")
-            research_data = result.get("research", {})
-
-            if research_data:
-                for entity_name, data in research_data.items():
-                    with st.expander(f"🔎 {entity_name}", expanded=True):
-                        # Check source type
-                        if data.get("used_existing_knowledge"):
-                            st.success("✓ Source: Existing Knowledge")
-                            st.write(f"**Info:** {data.get('known_info', 'N/A')}")
-                            st.caption(f"Reasoning: {data.get('reasoning', 'N/A')}")
-                        else:
-                            sources = data.get("sources", [])
-                            if sources:
-                                st.info(f"🔍 Found {len(sources)} sources from Linkup")
-                                num_to_show = (
-                                    len(sources)
-                                    if show_all_sources
-                                    else min(3, len(sources))
-                                )
-                                for j, source in enumerate(sources[:num_to_show], 1):
-                                    st.markdown(
-                                        f"**{j}. {source.get('title', 'No title')}**"
-                                    )
-                                    st.caption(
-                                        f"URL: {source.get('url', 'N/A')[:80]}..."
-                                    )
-                                    st.write(
-                                        source.get("snippet", "No snippet")[:200]
-                                        + "..."
-                                    )
-                                    st.divider()
-                            elif data.get("error"):
-                                st.warning(f"⚠️ Error: {data.get('error')}")
-                            else:
-                                st.info("No sources found")
-            else:
-                st.info("No research conducted")
-
-        # Tab 3: Reply
-        with tab3:
-            st.subheader("Drafted Reply")
-            draft_reply = result.get("draft_reply", "")
-
-            if draft_reply and draft_reply != "Error: Could not generate reply":
-                st.write(draft_reply)
-
-                # Copy button
-                st.code(draft_reply, language="text", line_numbers=False)
-            else:
-                st.warning("Could not generate reply")
-
-        # Tab 4: Reasoning
-        with tab4:
-            st.subheader("Decision-Making Steps")
-            reasoning_steps = result.get("reasoning_steps", [])
-
-            if reasoning_steps and show_reasoning:
-                for step in reasoning_steps:
-                    # Determine icon based on step type
-                    icon = "🧠"
-                    if "✓" in step.get("step", ""):
-                        icon = "✅"
-                    elif "❌" in step.get("step", ""):
-                        icon = "❌"
-                    elif "⚠️" in step.get("step", ""):
-                        icon = "⚠️"
-                    elif "🔍" in step.get("step", ""):
-                        icon = "🔍"
-                    elif "🚀" in step.get("step", ""):
-                        icon = "🚀"
-
-                    st.write(
-                        f"{icon} **[{step.get('timestamp', 'N/A')}]** {step.get('step', '')}"
-                    )
-            elif show_reasoning:
-                st.info("No reasoning steps available")
-            else:
-                st.info("Reasoning display disabled in sidebar")
-
-        # Tab 5: Stats
-        with tab5:
-            st.subheader("📊 Detailed Statistics & Content Source Analysis")
-
-            # Enhanced Stats Display
-            stats = result.get("stats", {})
-
-            # KEY METRICS ROW
-            st.markdown("### 🎯 Key Metrics")
-            key_col1, key_col2, key_col3, key_col4 = st.columns(4)
-
-            with key_col1:
-                efficiency = stats.get("efficiency", {})
-                eff_rate = efficiency.get("efficiency_rate", 0)
-                st.metric(
-                    "💡 Efficiency Rate",
-                    f"{eff_rate:.1f}%",
-                    f"Avoided {efficiency.get('searches_avoided', 0)} searches",
-                )
-            with key_col2:
-                st.metric(
-                    "🧠 Local Knowledge",
-                    stats.get("entities_used_knowledge", 0),
-                    f"vs {stats.get('entities_searched', 0)} searched",
-                )
-            with key_col3:
-                st.metric(
-                    "⏱️ Time Saved",
-                    f"{stats.get('efficiency', {}).get('time_saved_seconds', 0):.1f}s",
-                    "from smart decisions",
-                )
-            with key_col4:
-                perf = stats.get("performance", {})
-                cost = perf.get("estimated_cost_usd", 0)
-                saved = stats.get("efficiency", {}).get("cost_saved_usd", 0)
-                st.metric("💰 Cost", f"${cost:.4f}", f"Saved ${saved:.4f}")
-
-            st.markdown("---")
-
-            # ENTITY PROCESSING BREAKDOWN
-            st.markdown("### 🔍 Entity Processing Breakdown")
-            decisions = stats.get("entity_decisions", {})
-
-            breakdown_col1, breakdown_col2, breakdown_col3, breakdown_col4 = st.columns(
-                4
-            )
-
-            with breakdown_col1:
-                st.info(
-                    f"**Skipped Generic:** {len(decisions.get('skipped_generic', []))}\n\n"
-                    + "\n".join(
-                        [f"• {e}" for e in decisions.get("skipped_generic", [])[:3]]
-                    )
-                )
-            with breakdown_col2:
-                st.success(
-                    f"**Local Knowledge:** {len(decisions.get('used_knowledge', []))}\n\n"
-                    + "\n".join(
-                        [f"• {e}" for e in decisions.get("used_knowledge", [])[:3]]
-                    )
-                )
-            with breakdown_col3:
-                st.warning(
-                    f"**Unknown (Searched):** {len(decisions.get('searched_unknown', []))}\n\n"
-                    + "\n".join(
-                        [f"• {e}" for e in decisions.get("searched_unknown", [])[:3]]
-                    )
-                )
-            with breakdown_col4:
-                st.info(
-                    f"**Recent Info (Searched):** {len(decisions.get('searched_recent', []))}\n\n"
-                    + "\n".join(
-                        [f"• {e}" for e in decisions.get("searched_recent", [])[:3]]
-                    )
-                )
-
-            st.markdown("---")
-
-            # INFORMATION SOURCES ATTRIBUTION
-            st.markdown("### 📚 Information Sources Attribution")
-            sources_info = stats.get("information_sources", {})
-
-            if sources_info:
-                sources_col1, sources_col2 = st.columns(2)
-
-                with sources_col1:
-                    st.markdown("**Local Knowledge Sources:**")
-                    for entity_name, info in sources_info.items():
-                        if info.get("source_type") == "local_knowledge":
-                            conf = info.get("confidence", 0)
-                            st.write(f"✅ **{entity_name}** (confidence: {conf:.0%})")
-                            st.caption(
-                                f"💭 {info.get('known_info', 'Known from training')[:100]}..."
-                            )
-
-                with sources_col2:
-                    st.markdown("**Web Search Sources:**")
-                    for entity_name, info in sources_info.items():
-                        if info.get("source_type") == "linkup":
-                            st.write(
-                                f"🌐 **{entity_name}** ({info.get('sources_count', 0)} sources)"
-                            )
-                            st.caption(f"Query: {info.get('query_used', 'N/A')[:80]}")
-
-            st.markdown("---")
-
-            # PERFORMANCE DETAILS
-            st.markdown("### ⚙️ Performance Details")
-            perf = stats.get("performance", {})
-            timings = perf.get("timings", {})
-            api_calls = perf.get("api_calls", {})
-
-            perf_col1, perf_col2 = st.columns(2)
-
-            with perf_col1:
-                st.markdown("**API Calls:**")
-                for call_type, count in api_calls.items():
-                    if count > 0:
-                        st.write(f"• {call_type}: {count}")
-                st.markdown(f"**Total API Calls:** {perf.get('total_api_calls', 0)}")
-
-            with perf_col2:
-                st.markdown("**Execution Timings:**")
-                for timing_type, duration in timings.items():
-                    st.write(f"• {timing_type}: {duration}s")
-                st.markdown(f"**Total:** {result.get('execution_time', 0):.2f}s")
-
-            st.markdown("---")
-
-            # DRAFT QUALITY ANALYSIS
-            st.markdown("### ✍️ Draft Quality Analysis")
-            draft_analysis = stats.get("draft_analysis", {})
-
-            if draft_analysis:
-                quality_col1, quality_col2, quality_col3 = st.columns(3)
-
-                with quality_col1:
-                    st.metric(
-                        "Word Count",
-                        draft_analysis.get("word_count", 0),
-                        "target: 100-150",
-                    )
-
-                with quality_col2:
-                    st.metric(
-                        "Structure",
-                        f"{draft_analysis.get('paragraphs', 0)} paragraphs",
-                        f"{draft_analysis.get('sentences', 0)} sentences",
-                    )
-
-                with quality_col3:
-                    mentions = draft_analysis.get("entities_mentioned_count", 0)
-                    st.metric(
-                        "Entity References",
-                        mentions,
-                        f"{draft_analysis.get('research_references', 0)} research cites",
-                    )
-
-                # Quality indicators
-                quality_ind = draft_analysis.get("quality_indicators", {})
-                st.markdown("**Quality Checks:**")
-                check_col1, check_col2, check_col3 = st.columns(3)
-
-                with check_col1:
-                    status = "✅" if quality_ind.get("concise") else "❌"
-                    st.write(f"{status} Concise (≤200 words)")
-
-                with check_col2:
-                    status = "✅" if quality_ind.get("well_structured") else "❌"
-                    st.write(f"{status} Well Structured (3-4 paragraphs)")
-
-                with check_col3:
-                    status = "✅" if quality_ind.get("uses_research") else "❌"
-                    st.write(f"{status} Uses Research")
-
-            st.markdown("---")
-
-            # EFFICIENCY VISUALIZATION
-            st.markdown("### 📊 Efficiency Breakdown")
-            col1, col2 = st.columns([2, 1])
-
-            with col1:
-                # Smart Linkup Impact Section
-                st.markdown("#### 🔗 Smart Linkup Impact")
-                if stats:
-                    impact_col1, impact_col2 = st.columns(2)
-                    with impact_col1:
-                        st.write(
-                            f"**Total Entities:** {stats.get('total_entities_detected', 0)}"
-                        )
-                        st.write(
-                            f"**Processed:** {stats.get('total_entities_processed', 0)}"
-                        )
-                    with impact_col2:
-                        st.write(
-                            f"**Used Knowledge:** {stats.get('entities_used_knowledge', 0)}"
-                        )
-                        st.write(f"**Searched:** {stats.get('entities_searched', 0)}")
-
-                    efficiency = stats.get("efficiency", {}).get("efficiency_rate", 0)
-                    st.markdown(f"#### ⚡ Efficiency: {efficiency:.1f}%")
-                    st.progress(min(100, efficiency) / 100)
-                    st.markdown(
-                        f"**{efficiency:.1f}%** efficiency • "
-                        f"**Avoided:** {stats.get('efficiency', {}).get('searches_avoided', 0)} searches"
-                    )
-
-            with col2:
-                # Content Source Analytics Panel
-                st.markdown("#### 📊 Source Breakdown")
-
-                # Calculate content percentages
-                total_entities = stats.get("total_entities_processed", 1)
-                linkup_entities = stats.get("entities_searched", 0)
-                known_entities = stats.get("entities_used_knowledge", 0)
-
-                linkup_pct = (
-                    (linkup_entities / total_entities * 100)
-                    if total_entities > 0
-                    else 0
-                )
-                known_pct = (
-                    (known_entities / total_entities * 100) if total_entities > 0 else 0
-                )
-
-                # Source breakdown visualization
-                st.markdown("**Content Sources:**")
-
-                col_source1, col_source2 = st.columns(2)
-                with col_source1:
-                    st.markdown(f"🌐 **Linkup/Web**")
-                    st.markdown(
-                        f"<div style='font-size:24px; font-weight:bold; color:#2196F3'>{linkup_pct:.0f}%</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(f"{linkup_entities}/{total_entities} entities")
-
-                with col_source2:
-                    st.markdown(f"🧠 **LLM Knowledge**")
-                    st.markdown(
-                        f"<div style='font-size:24px; font-weight:bold; color:#4CAF50'>{known_pct:.0f}%</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(f"{known_entities}/{total_entities} entities")
-
-                st.markdown("---")
-                st.markdown("**Content Quality:**")
-
-                # Data quality metrics
-                has_sources = len(result.get("sources", [])) > 0
-                has_email_context = len(email_content) > 100
-
-                quality_score = 0
-                if linkup_entities > 0:
-                    quality_score += 25
-                if known_entities > 0:
-                    quality_score += 25
-                if has_sources:
-                    quality_score += 25
-                if has_email_context:
-                    quality_score += 25
-
-                st.progress(quality_score / 100)
-                st.caption(f"Data Quality: {quality_score}/100")
-
-                st.markdown("---")
-                st.markdown("**Trust Indicators:**")
-
-                # Trust indicators
-                trust_items = []
-                if known_pct >= 50:
-                    trust_items.append("✅ High knowledge base coverage")
-                if linkup_pct > 0:
-                    trust_items.append("✅ Fresh web data included")
-                if len(result.get("sources", [])) >= 3:
-                    trust_items.append("✅ Multiple sources verified")
-                if efficiency >= 70:
-                    trust_items.append("✅ Cost-optimized analysis")
-
-                for item in trust_items:
-                    st.caption(item)
-
-            st.markdown("---")
-            st.markdown("### 🧠 Knowledge Source Attribution")
-
-            # Attribution breakdown
-            research_data = result.get("research", {})
-
-            if research_data:
-                attribution_col1, attribution_col2 = st.columns(2)
-
-                with attribution_col1:
-                    st.markdown("**From Existing Knowledge:**")
-                    knowledge_sources = []
-                    for entity, data in research_data.items():
-                        if data.get("used_existing_knowledge"):
-                            reasoning = data.get("reasoning", "General knowledge")
-                            knowledge_sources.append(
-                                f"• **{entity}**: {reasoning[:60]}..."
-                            )
-
-                    if knowledge_sources:
-                        for source in knowledge_sources:
-                            st.caption(source)
-                    else:
-                        st.caption("No existing knowledge used")
-
-                with attribution_col2:
-                    st.markdown("**From Web Research (Linkup):**")
-                    linkup_sources = []
-                    for entity, data in research_data.items():
-                        if data.get("sources") and not data.get(
-                            "used_existing_knowledge"
-                        ):
-                            source_count = len(data.get("sources", []))
-                            linkup_sources.append(
-                                f"• **{entity}**: {source_count} sources found"
-                            )
-
-                    if linkup_sources:
-                        for source in linkup_sources:
-                            st.caption(source)
-                    else:
-                        st.caption("No web research performed")
-
-                    # Cost estimation
-                    searches_avoided = stats.get("entities_known", 0)
-                    if searches_avoided > 0:
-                        estimated_savings = searches_avoided * 0.01
-                        st.success(
-                            f"💰 **Estimated Savings:** ${estimated_savings:.2f} (skipped {searches_avoided} API calls)"
-                        )
-
-        # Download results
-        st.markdown("---")
-        st.subheader("📥 Export Results")
 
         col1, col2 = st.columns(2)
-
         with col1:
-            json_str = json.dumps(result, indent=2, default=str)
-            st.download_button(
-                label="📄 Download JSON",
-                data=json_str,
-                file_name=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-            )
-
+            if st.button("📋 Copy to Clipboard"):
+                st.code(draft_reply, language=None)
+                st.success("✅ Reply copied! (Use Ctrl+C to copy from the box above)")
         with col2:
-            txt_content = f"""EMAIL ANALYSIS REPORT
-Generated: {result.get('timestamp')}
+            if st.button("🔄 Regenerate"):
+                st.session_state.analysis_complete = False
+                st.rerun()
 
-ENTITIES EXTRACTED:
-{chr(10).join([f"- {e['name']} ({e['type']})" for e in result.get('entities', [])])}
+# ==================== SCENARIO 2: DOCUMENT ANALYSIS ====================
+elif scenario == "📄 Document Analysis":
+    st.markdown("## 📄 Document Analysis & Verification")
+    st.markdown('<p class="scenario-description">Upload contracts and verify clauses against industry standards using Linkup</p>', unsafe_allow_html=True)
 
-SMART LINKUP STATS:
-- Total Entities: {stats.get('total_entities', 0)}
-- Searched: {stats.get('entities_searched', 0)}
-- Using Knowledge: {stats.get('entities_known', 0)}
-- Efficiency: {stats.get('efficiency_pct', 0):.1f}%
+    uploaded_file = st.file_uploader(
+        "**Upload PDF Contract:**",
+        type=['pdf'],
+        help="Upload a PDF contract for analysis"
+    )
 
-DRAFTED REPLY:
-{result.get('draft_reply', 'N/A')}
-"""
-            st.download_button(
-                label="📝 Download Text",
-                data=txt_content,
-                file_name=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain",
-            )
+    question = st.text_input(
+        "**What would you like to analyze?**",
+        value="Are these payment terms standard for 2025 SaaS contracts?",
+        placeholder="e.g., Are payment terms standard? Review termination clauses."
+    )
 
+    if uploaded_file and question:
+        # Show file info
+        st.info(f"📄 File uploaded: {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
 
-if __name__ == "__main__":
-    # Initialize session state
-    if "run_analysis" not in st.session_state:
-        st.session_state.run_analysis = False
-    if "last_result" not in st.session_state:
-        st.session_state.last_result = None
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            analyze_doc_button = st.button("🔍 Analyze Document", type="primary", use_container_width=True)
 
-    main()
+        if analyze_doc_button:
+            with st.spinner("📄 Extracting and analyzing document... This may take 15-20 seconds"):
+                try:
+                    # Save uploaded file temporarily
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_file_path = tmp_file.name
+
+                    # Import and call agent
+                    from src.agents.orchestrator import AgentOrchestrator
+                    agent = AgentOrchestrator()
+
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
+                    status_text.text("📄 Extracting text from PDF...")
+                    progress_bar.progress(25)
+
+                    status_text.text("🔍 Identifying key clauses...")
+                    progress_bar.progress(50)
+
+                    status_text.text("🌐 Researching industry standards with Linkup...")
+                    progress_bar.progress(75)
+
+                    result = agent.process(
+                        scenario="document",
+                        input_data={
+                            "file_path": tmp_file_path,
+                            "question": question
+                        }
+                    )
+
+                    status_text.text("✅ Complete!")
+                    progress_bar.progress(100)
+
+                    st.session_state.current_result = result
+                    st.session_state.analysis_complete = True
+
+                    status_text.empty()
+                    progress_bar.empty()
+
+                    # Clean up temp file
+                    os.unlink(tmp_file_path)
+
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+                    st.info("💡 Document analysis agent not yet implemented.")
+
+    # Display results
+    if st.session_state.analysis_complete and st.session_state.current_result:
+        result = st.session_state.current_result
+
+        st.success(f"✅ Analysis complete in {result.get('execution_time', 0)}s")
+
+        # Reasoning steps
+        with st.expander("🧠 Agent Reasoning Process", expanded=True):
+            display_reasoning_steps(result.get('reasoning_steps', []))
+
+        # Linkup sources
+        with st.expander("🔍 Industry Standards Research", expanded=True):
+            display_linkup_sources(result.get('linkup_sources', []))
+
+        # Analysis results
+        st.markdown("### 📊 Document Analysis Results")
+
+        analysis_text = result.get('result', 'No analysis generated')
+
+        if isinstance(analysis_text, dict):
+            for key, value in analysis_text.items():
+                st.markdown(f"**{key}:** {value}")
+        else:
+            st.markdown(f'<div class="result-card">{analysis_text}</div>', unsafe_allow_html=True)
+
+        if 'warnings' in result:
+            st.markdown("### ⚠️ Flagged Issues")
+            for warning in result['warnings']:
+                st.markdown(f'<div class="warning-card">⚠️ {warning}</div>', unsafe_allow_html=True)
+
+        if st.button("🔄 Analyze Another Document"):
+            st.session_state.analysis_complete = False
+            st.rerun()
+
+# ==================== SCENARIO 3: MEETING PREPARATION ====================
+elif scenario == "📅 Meeting Preparation":
+    st.markdown("## 📅 Meeting Preparation Assistant")
+    st.markdown('<p class="scenario-description">Generate comprehensive meeting briefings with past context and real-time research</p>', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        company_name = st.text_input(
+            "**Company Name:**",
+            placeholder="e.g., TechCorp",
+            value="TechCorp"
+        )
+
+    with col2:
+        meeting_date = st.text_input(
+            "**Meeting Date/Time:**",
+            placeholder="e.g., Tomorrow at 3pm",
+            value="Tomorrow at 3pm"
+        )
+
+    meeting_context = st.text_area(
+        "**Meeting Context (optional):**",
+        placeholder="e.g., Partnership discussion for AI integration, follow-up from initial call",
+        height=100,
+        value="Partnership discussion for AI integration"
+    )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        prep_button = st.button("📋 Generate Meeting Briefing", type="primary", use_container_width=True)
+
+    if prep_button and company_name:
+        with st.spinner("📋 Preparing comprehensive briefing... This may take 15-20 seconds"):
+            try:
+                from src.agents.orchestrator import AgentOrchestrator
+                agent = AgentOrchestrator()
+
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                status_text.text("🔍 Searching past interactions...")
+                progress_bar.progress(25)
+
+                status_text.text("🌐 Researching current company news with Linkup...")
+                progress_bar.progress(50)
+
+                status_text.text("📊 Analyzing and synthesizing information...")
+                progress_bar.progress(75)
+
+                result = agent.process(
+                    scenario="meeting",
+                    input_data={
+                        "company_name": company_name,
+                        "meeting_context": meeting_context,
+                        "meeting_date": meeting_date
+                    }
+                )
+
+                status_text.text("✅ Complete!")
+                progress_bar.progress(100)
+
+                st.session_state.current_result = result
+                st.session_state.analysis_complete = True
+
+                status_text.empty()
+                progress_bar.empty()
+
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+                st.info("💡 Meeting preparation agent not yet implemented.")
+
+    # Display results
+    if st.session_state.analysis_complete and st.session_state.current_result:
+        result = st.session_state.current_result
+
+        st.success(f"✅ Briefing ready in {result.get('execution_time', 0)}s")
+
+        with st.expander("🧠 Agent Reasoning Process", expanded=True):
+            display_reasoning_steps(result.get('reasoning_steps', []))
+
+        with st.expander("🔍 Current News & Research", expanded=True):
+            display_linkup_sources(result.get('linkup_sources', []))
+
+        st.markdown("### 📋 Meeting Briefing")
+        st.markdown(f"**Meeting with:** {company_name}")
+        st.markdown(f"**When:** {meeting_date}")
+
+        briefing_text = result.get('result', 'No briefing generated')
+
+        st.markdown(f'<div class="result-card">{briefing_text}</div>', unsafe_allow_html=True)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 Save Briefing"):
+                st.download_button(
+                    label="📥 Download as Text File",
+                    data=briefing_text,
+                    file_name=f"meeting_briefing_{company_name}.txt",
+                    mime="text/plain"
+                )
+        with col2:
+            if st.button("🔄 Generate New Briefing"):
+                st.session_state.analysis_complete = False
+                st.rerun()
+
+# Footer
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.caption("🚀 Built with Streamlit")
+with col2:
+    st.caption("🤖 Powered by Llama 3.3 70B (Groq)")
+with col3:
+    st.caption("🔍 Research via Linkup")
