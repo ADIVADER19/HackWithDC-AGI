@@ -1,46 +1,40 @@
 """
 Agent Orchestrator - Main API for all agent operations
-Developer 1: Backend Agents
-
-This is the integration point for the UI layer.
+Routes scenarios to the appropriate agent.
 """
 
+import time
 from .groq_client import GroqClient
 from .linkup_wrapper import LinkupWrapper
-# TODO: Import specific agents as you build them
-# from .email_agent import EmailAgent
-# from .document_agent import DocumentAgent
-# from .meeting_agent import MeetingAgent
+from .email_agent import SmartEmailAgent
+
 
 class AgentOrchestrator:
     def __init__(self):
         self.groq = GroqClient()
         self.linkup = LinkupWrapper()
-        # TODO: Initialize specific agents
-        # self.email_agent = EmailAgent(self.groq, self.linkup)
-        # self.document_agent = DocumentAgent(self.groq, self.linkup)
-        # self.meeting_agent = MeetingAgent(self.groq, self.linkup)
-    
+        self.email_agent = SmartEmailAgent()
+
     def process(self, scenario: str, input_data: dict) -> dict:
         """
-        Main entry point for all agent requests
-        
+        Main entry point for all agent requests.
+
         Args:
             scenario: One of 'email', 'document', 'meeting'
             input_data: Dict with scenario-specific data
-        
+
         Returns:
             {
-                'reasoning_steps': [...],  # List of reasoning steps for UI
-                'linkup_sources': [...],   # Linkup search results
-                'result': '...',           # Final output (draft email, report, etc.)
-                'confidence': 0.95,        # Model confidence
-                'execution_time': 5.2      # Seconds taken
+                'reasoning_steps': [...],
+                'linkup_sources': [...],
+                'result': '...',
+                'draft_reply': '...',
+                'confidence': 0.95,
+                'execution_time': 5.2
             }
         """
-        import time
         start_time = time.time()
-        
+
         try:
             if scenario == "email":
                 result = self._process_email(input_data)
@@ -50,93 +44,74 @@ class AgentOrchestrator:
                 result = self._process_meeting(input_data)
             else:
                 raise ValueError(f"Unknown scenario: {scenario}")
-            
+
             result['execution_time'] = round(time.time() - start_time, 2)
             return result
-        
+
         except Exception as e:
             return {
                 'error': str(e),
                 'reasoning_steps': [f"Error occurred: {str(e)}"],
                 'linkup_sources': [],
-                'result': None
+                'result': None,
+                'execution_time': round(time.time() - start_time, 2)
             }
-    
+
     def _process_email(self, input_data: dict) -> dict:
         """
-        Process email scenario
-        
+        Process email scenario using SmartEmailAgent.
+
         Expected input_data: {
             'email_content': 'Email text...'
         }
         """
-        # TODO: Implement using EmailAgent
-        # For now, return a placeholder
-        return {
-            'reasoning_steps': [
-                "Analyzing email content...",
-                "Detected entity: Acme Ventures",
-                "Searching Linkup for company info...",
-                "Drafting informed response..."
-            ],
-            'linkup_sources': [],
-            'result': "Draft email reply will appear here",
-            'confidence': 0.0
-        }
-    
+        email_content = input_data.get('email_content', '')
+        result = self.email_agent.process(email_content)
+
+        # Ensure draft_reply key exists for UI compatibility
+        if 'draft_reply' not in result:
+            result['draft_reply'] = result.get('result', '')
+
+        return result
+
     def _process_document(self, input_data: dict) -> dict:
         """
-        Process document scenario
-        
+        Process document scenario (stub - not yet implemented).
+
         Expected input_data: {
             'file_path': '/path/to/document.pdf',
             'question': 'Are payment terms standard?'
         }
         """
-        # TODO: Implement using DocumentAgent
         return {
             'reasoning_steps': [
                 "Extracting text from PDF...",
                 "Identifying payment terms...",
-                "Searching industry standards...",
+                "Searching industry standards via Linkup...",
                 "Comparing and analyzing..."
             ],
             'linkup_sources': [],
-            'result': "Document analysis will appear here",
+            'result': "Document analysis agent not yet implemented. Coming soon!",
             'confidence': 0.0
         }
-    
+
     def _process_meeting(self, input_data: dict) -> dict:
         """
-        Process meeting preparation scenario
-        
+        Process meeting preparation scenario (stub - not yet implemented).
+
         Expected input_data: {
             'company_name': 'TechCorp',
-            'meeting_context': 'Partnership discussion'
+            'meeting_context': 'Partnership discussion',
+            'meeting_date': 'Tomorrow at 3pm'
         }
         """
-        # TODO: Implement using MeetingAgent
         return {
             'reasoning_steps': [
                 "Searching past interactions...",
-                "Looking up recent company news...",
+                "Looking up recent company news via Linkup...",
                 "Synthesizing briefing document..."
             ],
             'linkup_sources': [],
-            'result': "Meeting briefing will appear here",
+            'result': "Meeting preparation agent not yet implemented. Coming soon!",
             'confidence': 0.0
         }
-
-
-# Quick test
-if __name__ == "__main__":
-    orchestrator = AgentOrchestrator()
-    
-    # Test email scenario
-    result = orchestrator.process(
-        scenario="email",
-        input_data={"email_content": "Test email from Acme Corp"}
-    )
-    
-    print(f"Result: {result}")
-    print(f"Execution time: {result['execution_time']}s")

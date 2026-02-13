@@ -1,10 +1,10 @@
 """
 Backend Agents Package
-Developer 1: Backend Agents & Linkup Integration
 """
 
-from .orchestrator import AgentOrchestrator
+from .email_intelligence_agent import EmailIntelligenceAgent
 from .groq_client import GroqClient
 from .linkup_wrapper import LinkupWrapper
+from .orchestrator import AgentOrchestrator
 
-__all__ = ['AgentOrchestrator', 'GroqClient', 'LinkupWrapper']
+__all__ = ["EmailIntelligenceAgent", "GroqClient", "LinkupWrapper", "AgentOrchestrator"]
